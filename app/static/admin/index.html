@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bidii Credit — Admin Dashboard</title>
+<style>
+  :root {
+    --navy-950: #061A30;
+    --navy-900: #0B2A4A;
+    --navy-700: #1B4A79;
+    --ember-500: #F4801F;
+    --ember-600: #DB6A0E;
+    --ember-100: #FDE8D3;
+    --mist-50: #F7F5F2;
+    --mist-100: #EFEBE4;
+    --mist-200: #E3DDD3;
+    --ink-900: #1B2430;
+    --ink-700: #3D4756;
+    --ink-500: #647084;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Inter, Roboto, sans-serif;
+    background: var(--mist-50);
+    color: var(--ink-900);
+  }
+  .hidden { display: none !important; }
+
+  /* Login screen */
+  #login-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse 90% 60% at 20% 0%, var(--navy-700) 0%, var(--navy-900) 45%, var(--navy-950) 100%);
+  }
+  .login-card {
+    background: white;
+    border-radius: 20px;
+    padding: 40px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .login-card h1 {
+    font-size: 20px;
+    margin: 0 0 4px;
+    color: var(--navy-900);
+  }
+  .login-card p.sub {
+    margin: 0 0 24px;
+    color: var(--ink-500);
+    font-size: 13px;
+  }
+  label { display: block; font-size: 13px; color: var(--ink-500); margin-bottom: 6px; }
+  input, select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--mist-200);
+    border-radius: 10px;
+    font-size: 14px;
+    margin-bottom: 16px;
+    font-family: inherit;
+  }
+  button {
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn-primary {
+    width: 100%;
+    background: var(--ember-500);
+    color: white;
+    border: none;
+    padding: 12px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: var(--ember-600); }
+  #login-error {
+    background: #FEF2F2;
+    color: #DC2626;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+
+  /* Dashboard shell */
+  #dashboard { display: none; }
+  header.topbar {
+    background: var(--navy-950);
+    color: white;
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header.topbar .brand { font-weight: 800; font-size: 16px; }
+  header.topbar .brand span { color: var(--ember-500); }
+  .btn-logout {
+    background: rgba(255,255,255,0.1);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 999px;
+    font-size: 13px;
+  }
+  .btn-logout:hover { background: rgba(255,255,255,0.2); }
+
+  nav.tabs {
+    display: flex;
+    gap: 4px;
+    padding: 16px 24px 0;
+    background: white;
+    border-bottom: 1px solid var(--mist-200);
+  }
+  nav.tabs button {
+    background: none;
+    border: none;
+    padding: 10px 16px;
+    font-size: 14px;
+    color: var(--ink-500);
+    border-bottom: 2px solid transparent;
+    font-weight: 600;
+  }
+  nav.tabs button.active {
+    color: var(--navy-900);
+    border-bottom-color: var(--ember-500);
+  }
+
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    border: 1px solid var(--mist-200);
+  }
+  .stat-card .label { font-size: 12px; color: var(--ink-500); margin-bottom: 6px; }
+  .stat-card .value { font-size: 26px; font-weight: 800; color: var(--navy-900); }
+  .stat-card .sub { font-size: 11px; color: var(--ink-500); margin-top: 4px; }
+
+  .card {
+    background: white;
+    border-radius: 16px;
+    border: 1px solid var(--mist-200);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .card h3 { margin: 0 0 14px; font-size: 14px; color: var(--navy-900); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--mist-200); }
+  th { color: var(--ink-500); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  td { color: var(--ink-700); }
+  tr:last-child td { border-bottom: none; }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge.pending, .badge.received { background: var(--ember-100); color: var(--ember-600); }
+  .badge.approved, .badge.hired, .badge.shortlisted { background: #DCFCE7; color: #16A34A; }
+  .badge.declined, .badge.rejected { background: #FEE2E2; color: #DC2626; }
+  .badge.contacted, .badge.reviewing { background: #DBEAFE; color: #2563EB; }
+
+  .toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .toolbar select { width: auto; margin-bottom: 0; }
+  .toolbar .spacer { flex: 1; }
+
+  .pagination { display: flex; gap: 8px; align-items: center; margin-top: 16px; justify-content: center; }
+  .pagination button {
+    background: white;
+    border: 1px solid var(--mist-200);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    color: var(--ink-700);
+  }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pagination span { font-size: 13px; color: var(--ink-500); }
+
+  .status-select { padding: 6px 8px; border-radius: 8px; font-size: 12px; margin-bottom: 0; width: auto; }
+  .cv-link { color: var(--ember-500); font-weight: 600; text-decoration: none; font-size: 12px; }
+  .empty-state { text-align: center; padding: 40px; color: var(--ink-500); font-size: 13px; }
+  .loading { text-align: center; padding: 40px; color: var(--ink-500); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-card">
+    <h1>Bidii<span style="color:var(--ember-500)">Credit</span> Admin</h1>
+    <p class="sub">Sign in to view submissions and site activity.</p>
+    <div id="login-error" class="hidden"></div>
+    <form id="login-form">
+      <label>Username</label>
+      <input type="text" id="login-username" autocomplete="username" required />
+      <label>Password</label>
+      <input type="password" id="login-password" autocomplete="current-password" required />
+      <button type="submit" class="btn-primary">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<div id="dashboard">
+  <header class="topbar">
+    <div class="brand">Bidii<span>Credit</span> Admin</div>
+    <button class="btn-logout" id="logout-btn">Log out</button>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="stats" class="active">Overview</button>
+    <button data-tab="contacts">Contact Messages</button>
+    <button data-tab="loans">Loan Applications</button>
+    <button data-tab="careers">Career Applications</button>
+    <button data-tab="admins">Admin Users</button>
+  </nav>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section class="panel active" id="panel-stats">
+      <div class="stat-grid" id="stat-grid"><div class="loading">Loading stats…</div></div>
+
+      <div class="card">
+        <h3>Loan applications by product</h3>
+        <div id="product-breakdown-table"><div class="loading">Loading…</div></div>
+      </div>
+
+      <div class="card">
+        <h3>Loan applications by status</h3>
+        <div id="loan-status-breakdown"></div>
+      </div>
+
+      <div class="card">
+        <h3>Career applications by status</h3>
+        <div id="career-status-breakdown"></div>
+      </div>
+    </section>
+
+    <!-- CONTACTS -->
+    <section class="panel" id="panel-contacts">
+      <div class="card">
+        <div class="toolbar">
+          <select id="contact-subject-filter">
+            <option value="">All subjects</option>
+            <option value="loan-inquiry">Loan Inquiry</option>
+            <option value="existing-loan">Existing Loan</option>
+            <option value="complaint">Complaint</option>
+            <option value="other">Other</option>
+          </select>
+          <div class="spacer"></div>
+        </div>
+        <div id="contacts-table"><div class="loading">Loading…</div></div>
+        <div class="pagination" id="contacts-pagination"></div>
+      </div>
+    </section>
+
+    <!-- LOAN APPLICATIONS -->
+    <section class="panel" id="panel-loans">
+      <div class="card">
+        <div class="toolbar">
+          <select id="loan-status-filter">
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="contacted">Contacted</option>
+            <option value="approved">Approved</option>
+            <option value="declined">Declined</option>
+          </select>
+          <select id="loan-product-filter">
+            <option value="">All products</option>
+            <option value="sme-loans">SME Loans</option>
+            <option value="mobile-loans">Mobile Loans</option>
+            <option value="logbook-loans">Logbook Loans</option>
+            <option value="rental-income-loans">Rental Income Loans</option>
+            <option value="check-off-loans">Check Off Loans</option>
+          </select>
+          <div class="spacer"></div>
+        </div>
+        <div id="loans-table"><div class="loading">Loading…</div></div>
+        <div class="pagination" id="loans-pagination"></div>
+      </div>
+    </section>
+
+    <!-- CAREER APPLICATIONS -->
+    <section class="panel" id="panel-careers">
+      <div class="card">
+        <div class="toolbar">
+          <select id="career-status-filter">
+            <option value="">All statuses</option>
+            <option value="received">Received</option>
+            <option value="reviewing">Reviewing</option>
+            <option value="shortlisted">Shortlisted</option>
+            <option value="rejected">Rejected</option>
+            <option value="hired">Hired</option>
+          </select>
+          <div class="spacer"></div>
+        </div>
+        <div id="careers-table"><div class="loading">Loading…</div></div>
+        <div class="pagination" id="careers-pagination"></div>
+      </div>
+    </section>
+
+    <!-- ADMIN USERS -->
+    <section class="panel" id="panel-admins">
+      <div class="card">
+        <h3>Add a new admin</h3>
+        <div id="admin-create-error" class="hidden" style="background:#FEF2F2;color:#DC2626;border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:16px;"></div>
+        <form id="admin-create-form" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
+          <div style="flex:1;min-width:160px;">
+            <label>Username</label>
+            <input type="text" id="new-admin-username" required minlength="3" style="margin-bottom:0" />
+          </div>
+          <div style="flex:1;min-width:160px;">
+            <label>Password</label>
+            <input type="password" id="new-admin-password" required minlength="8" style="margin-bottom:0" />
+          </div>
+          <button type="submit" class="btn-primary" style="width:auto;padding:10px 20px;margin-bottom:0;">Create Admin</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Existing admins</h3>
+        <div id="admins-table"><div class="loading">Loading…</div></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const API_BASE = window.location.origin;
+let token = sessionStorage.getItem("bidii_admin_token") || null;
+
+const state = {
+  contacts: { page: 1 },
+  loans: { page: 1 },
+  careers: { page: 1 },
+};
+
+function fmtKes(n) {
+  return "KES " + Math.round(n).toLocaleString("en-KE");
+}
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString("en-KE", { dateStyle: "medium", timeStyle: "short" });
+}
+
+async function apiFetch(path, options = {}) {
+  const res = await fetch(API_BASE + path, {
+    ...options,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: "Bearer " + token } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  if (res.status === 401) {
+    logout();
+    throw new Error("Session expired");
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.message || data?.detail || "Request failed");
+  }
+  return data;
+}
+
+let currentUsername = sessionStorage.getItem("bidii_admin_username") || null;
+
+// ---------- Auth ----------
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const username = document.getElementById("login-username").value;
+  const password = document.getElementById("login-password").value;
+  const errorBox = document.getElementById("login-error");
+  errorBox.classList.add("hidden");
+  try {
+    const res = await fetch(API_BASE + "/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Login failed");
+    token = data.access_token;
+    currentUsername = username;
+    sessionStorage.setItem("bidii_admin_token", token);
+    sessionStorage.setItem("bidii_admin_username", username);
+    showDashboard();
+  } catch (err) {
+    errorBox.textContent = err.message;
+    errorBox.classList.remove("hidden");
+  }
+});
+
+document.getElementById("logout-btn").addEventListener("click", logout);
+
+function logout() {
+  token = null;
+  currentUsername = null;
+  sessionStorage.removeItem("bidii_admin_token");
+  sessionStorage.removeItem("bidii_admin_username");
+  document.getElementById("dashboard").style.display = "none";
+  document.getElementById("login-screen").style.display = "flex";
+}
+
+function showDashboard() {
+  document.getElementById("login-screen").style.display = "none";
+  document.getElementById("dashboard").style.display = "block";
+  loadStats();
+  loadContacts();
+  loadLoans();
+  loadCareers();
+  loadAdmins();
+}
+
+// ---------- Tabs ----------
+document.querySelectorAll("nav.tabs button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("nav.tabs button").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+  });
+});
+
+// ---------- Overview ----------
+async function loadStats() {
+  try {
+    const s = await apiFetch("/api/admin/stats");
+    document.getElementById("stat-grid").innerHTML = `
+      <div class="stat-card"><div class="label">Contact Messages</div><div class="value">${s.total_contacts}</div><div class="sub">${s.contacts_last_7_days} in last 7 days</div></div>
+      <div class="stat-card"><div class="label">Loan Applications</div><div class="value">${s.total_loan_applications}</div><div class="sub">${s.loan_applications_last_7_days} in last 7 days</div></div>
+      <div class="stat-card"><div class="label">Career Applications</div><div class="value">${s.total_career_applications}</div><div class="sub">${s.career_applications_last_7_days} in last 7 days</div></div>
+      <div class="stat-card"><div class="label">Total Amount Requested</div><div class="value" style="font-size:20px">${fmtKes(s.total_amount_requested_all_time)}</div></div>
+    `;
+
+    const rows = s.loan_applications_by_product
+      .map((p) => `<tr><td>${p.product_name}</td><td>${p.count}</td><td>${fmtKes(p.total_amount_requested)}</td></tr>`)
+      .join("");
+    document.getElementById("product-breakdown-table").innerHTML = s.loan_applications_by_product.length
+      ? `<table><thead><tr><th>Product</th><th>Applications</th><th>Total Requested</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="empty-state">No loan applications yet.</div>`;
+
+    document.getElementById("loan-status-breakdown").innerHTML = Object.entries(s.loan_applications_by_status)
+      .map(([k, v]) => `<span class="badge ${k}" style="margin-right:8px">${k}: ${v}</span>`)
+      .join("");
+
+    document.getElementById("career-status-breakdown").innerHTML = Object.entries(s.career_applications_by_status)
+      .map(([k, v]) => `<span class="badge ${k}" style="margin-right:8px">${k}: ${v}</span>`)
+      .join("");
+  } catch (err) {
+    document.getElementById("stat-grid").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+// ---------- Contacts ----------
+document.getElementById("contact-subject-filter").addEventListener("change", () => {
+  state.contacts.page = 1;
+  loadContacts();
+});
+
+async function loadContacts() {
+  const subject = document.getElementById("contact-subject-filter").value;
+  const qs = new URLSearchParams({ page: state.contacts.page, page_size: 10 });
+  if (subject) qs.set("subject", subject);
+  try {
+    const data = await apiFetch("/api/admin/contacts?" + qs.toString());
+    const rows = data.items
+      .map(
+        (c) => `<tr>
+          <td>${c.name}</td>
+          <td>${c.email}<br><span style="color:var(--ink-500)">${c.phone}</span></td>
+          <td><span class="badge pending">${c.subject}</span></td>
+          <td style="max-width:280px">${c.message}</td>
+          <td>${fmtDate(c.created_at)}</td>
+        </tr>`
+      )
+      .join("");
+    document.getElementById("contacts-table").innerHTML = data.items.length
+      ? `<table><thead><tr><th>Name</th><th>Contact</th><th>Subject</th><th>Message</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="empty-state">No contact messages yet.</div>`;
+    renderPagination("contacts-pagination", data.meta, () => {
+      loadContacts();
+    }, state.contacts);
+  } catch (err) {
+    document.getElementById("contacts-table").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+// ---------- Loan Applications ----------
+document.getElementById("loan-status-filter").addEventListener("change", () => {
+  state.loans.page = 1;
+  loadLoans();
+});
+document.getElementById("loan-product-filter").addEventListener("change", () => {
+  state.loans.page = 1;
+  loadLoans();
+});
+
+async function loadLoans() {
+  const statusFilter = document.getElementById("loan-status-filter").value;
+  const productFilter = document.getElementById("loan-product-filter").value;
+  const qs = new URLSearchParams({ page: state.loans.page, page_size: 10 });
+  if (statusFilter) qs.set("status", statusFilter);
+  if (productFilter) qs.set("product_slug", productFilter);
+  try {
+    const data = await apiFetch("/api/admin/loan-applications?" + qs.toString());
+    const rows = data.items
+      .map(
+        (l) => `<tr>
+          <td>${l.full_name}<br><span style="color:var(--ink-500)">${l.phone}</span></td>
+          <td>${l.product_name}<br><span style="color:var(--ink-500)">${l.tier_label}</span></td>
+          <td>${fmtKes(l.amount)}<br><span style="color:var(--ink-500)">${l.term_value} ${l.term_unit}</span></td>
+          <td>${fmtKes(l.estimated_installment)}</td>
+          <td>
+            <select class="status-select" data-id="${l.id}" data-kind="loan">
+              ${["pending", "contacted", "approved", "declined"]
+                .map((s) => `<option value="${s}" ${s === l.status ? "selected" : ""}>${s}</option>`)
+                .join("")}
+            </select>
+          </td>
+          <td>${fmtDate(l.created_at)}</td>
+        </tr>`
+      )
+      .join("");
+    document.getElementById("loans-table").innerHTML = data.items.length
+      ? `<table><thead><tr><th>Applicant</th><th>Product</th><th>Amount / Term</th><th>Est. Installment</th><th>Status</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="empty-state">No loan applications match this filter.</div>`;
+
+    document.querySelectorAll('select[data-kind="loan"]').forEach((sel) => {
+      sel.addEventListener("change", async () => {
+        try {
+          await apiFetch(`/api/admin/loan-applications/${sel.dataset.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: sel.value }),
+          });
+          loadStats();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    });
+
+    renderPagination("loans-pagination", data.meta, () => loadLoans(), state.loans);
+  } catch (err) {
+    document.getElementById("loans-table").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+// ---------- Career Applications ----------
+document.getElementById("career-status-filter").addEventListener("change", () => {
+  state.careers.page = 1;
+  loadCareers();
+});
+
+async function loadCareers() {
+  const statusFilter = document.getElementById("career-status-filter").value;
+  const qs = new URLSearchParams({ page: state.careers.page, page_size: 10 });
+  if (statusFilter) qs.set("status", statusFilter);
+  try {
+    const data = await apiFetch("/api/admin/career-applications?" + qs.toString());
+    const rows = data.items
+      .map(
+        (c) => `<tr>
+          <td>${c.full_name}<br><span style="color:var(--ink-500)">${c.email}</span></td>
+          <td>${c.role}</td>
+          <td style="max-width:240px">${c.cover_note}</td>
+          <td><button class="cv-link" style="background:none;border:none;padding:0" onclick="downloadCv('${c.id}', '${c.cv_original_filename.replace(/'/g, "\\'")}')">Download CV</button></td>
+          <td>
+            <select class="status-select" data-id="${c.id}" data-kind="career">
+              ${["received", "reviewing", "shortlisted", "rejected", "hired"]
+                .map((s) => `<option value="${s}" ${s === c.status ? "selected" : ""}>${s}</option>`)
+                .join("")}
+            </select>
+          </td>
+          <td>${fmtDate(c.created_at)}</td>
+        </tr>`
+      )
+      .join("");
+    document.getElementById("careers-table").innerHTML = data.items.length
+      ? `<table><thead><tr><th>Applicant</th><th>Role</th><th>Cover Note</th><th>CV</th><th>Status</th><th>Date</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="empty-state">No career applications match this filter.</div>`;
+
+    document.querySelectorAll('select[data-kind="career"]').forEach((sel) => {
+      sel.addEventListener("change", async () => {
+        try {
+          await apiFetch(`/api/admin/career-applications/${sel.dataset.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: sel.value }),
+          });
+          loadStats();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+    });
+
+    renderPagination("careers-pagination", data.meta, () => loadCareers(), state.careers);
+  } catch (err) {
+    document.getElementById("careers-table").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+async function downloadCv(id, filename) {
+  try {
+    const res = await fetch(`${API_BASE}/api/admin/career-applications/${id}/cv`, {
+      headers: { Authorization: "Bearer " + token },
+    });
+    if (!res.ok) throw new Error("Could not download CV.");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "cv.pdf";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+// ---------- Admin Users ----------
+document.getElementById("admin-create-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const usernameInput = document.getElementById("new-admin-username");
+  const passwordInput = document.getElementById("new-admin-password");
+  const errorBox = document.getElementById("admin-create-error");
+  errorBox.classList.add("hidden");
+  try {
+    await apiFetch("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify({ username: usernameInput.value, password: passwordInput.value }),
+    });
+    usernameInput.value = "";
+    passwordInput.value = "";
+    loadAdmins();
+  } catch (err) {
+    errorBox.textContent = err.message;
+    errorBox.classList.remove("hidden");
+  }
+});
+
+async function loadAdmins() {
+  try {
+    const data = await apiFetch("/api/admin/users");
+    const rows = data.items
+      .map((u) => {
+        const isSelf = u.username === currentUsername;
+        const action = isSelf
+          ? `<span style="color:var(--ink-500);font-size:12px">This is you</span>`
+          : u.is_active
+          ? `<button class="cv-link" style="background:none;border:none;padding:0;color:#DC2626" onclick="deactivateAdmin('${u.id}')">Deactivate</button>`
+          : `<span style="color:var(--ink-500);font-size:12px">Deactivated</span>`;
+        return `<tr>
+          <td>${u.username}</td>
+          <td><span class="badge ${u.is_active ? "approved" : "declined"}">${u.is_active ? "active" : "inactive"}</span></td>
+          <td>${fmtDate(u.created_at)}</td>
+          <td>${action}</td>
+        </tr>`;
+      })
+      .join("");
+    document.getElementById("admins-table").innerHTML = `<table><thead><tr><th>Username</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  } catch (err) {
+    document.getElementById("admins-table").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+async function deactivateAdmin(id) {
+  if (!confirm("Deactivate this admin account? They'll lose dashboard access immediately.")) return;
+  try {
+    await apiFetch(`/api/admin/users/${id}`, { method: "DELETE" });
+    loadAdmins();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+// ---------- Shared pagination ----------
+function renderPagination(elementId, meta, reload, stateSlice) {
+  const el = document.getElementById(elementId);
+  if (meta.total_pages <= 1) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = `
+    <button ${meta.page <= 1 ? "disabled" : ""} id="${elementId}-prev">Previous</button>
+    <span>Page ${meta.page} of ${meta.total_pages} (${meta.total} total)</span>
+    <button ${meta.page >= meta.total_pages ? "disabled" : ""} id="${elementId}-next">Next</button>
+  `;
+  const prevBtn = document.getElementById(`${elementId}-prev`);
+  const nextBtn = document.getElementById(`${elementId}-next`);
+  if (prevBtn) prevBtn.addEventListener("click", () => { stateSlice.page--; reload(); });
+  if (nextBtn) nextBtn.addEventListener("click", () => { stateSlice.page++; reload(); });
+}
+
+// ---------- Init ----------
+if (token) {
+  showDashboard();
+}
+</script>
+</body>
+</html>
