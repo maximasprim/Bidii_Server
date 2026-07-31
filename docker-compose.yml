@@ -1,0 +1,17 @@
+services:
+  backend:
+    build: .
+    container_name: bidii-backend
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - .:/app
+      - ./uploads:/app/uploads
+      - ./bidii.db:/app/bidii.db
+
+    env_file:
+      - .env
+
+    restart: unless-stopped
