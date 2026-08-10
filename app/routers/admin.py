@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from app.config import get_settings
 from app.database import get_db
 from app.models.admin_user import AdminUser
@@ -35,6 +35,7 @@ from app.schemas.career_application import CareerApplicationRead
 from app.schemas.contact import ContactRead
 from app.schemas.loan_application import LoanApplicationRead
 from app.services.auth import get_current_admin, hash_password
+from app.services.storage import supabase, BUCKET
 
 settings = get_settings()
 logger = logging.getLogger("bidii.admin")
@@ -236,20 +237,62 @@ def update_career_application_status(
     return CareerApplicationRead.model_validate(record)
 
 
+# @router.get("/career-applications/{application_id}/cv")
+# def download_career_application_cv(application_id: str, db: Session = Depends(get_db)) -> FileResponse:
+#     record = db.query(CareerApplication).filter(CareerApplication.id == application_id).first()
+#     if record is None:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Career application not found.")
+
+#     file_path: Path = settings.upload_dir / "careers" / record.cv_stored_filename
+#     if not file_path.exists():
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="CV file not found on disk.")
+
+#     return FileResponse(
+#         path=file_path,
+#         filename=record.cv_original_filename,
+#         media_type="application/pdf",
+#     )
 @router.get("/career-applications/{application_id}/cv")
-def download_career_application_cv(application_id: str, db: Session = Depends(get_db)) -> FileResponse:
-    record = db.query(CareerApplication).filter(CareerApplication.id == application_id).first()
+def download_career_application_cv(
+    application_id: str,
+    db: Session = Depends(get_db),
+):
+    record = (
+        db.query(CareerApplication)
+        .filter(CareerApplication.id == application_id)
+        .first()
+    )
+
     if record is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Career application not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Career application not found.",
+        )
 
-    file_path: Path = settings.upload_dir / "careers" / record.cv_stored_filename
-    if not file_path.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="CV file not found on disk.")
+    try:
+        file_data = (
+            supabase.storage
+            .from_(BUCKET)
+            .download(record.cv_stored_filename)
+        )
+    except Exception:
+        logger.exception(
+            "Failed to download CV from Supabase Storage: %s",
+            record.cv_stored_filename,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="CV file not found in storage.",
+        )
 
-    return FileResponse(
-        path=file_path,
-        filename=record.cv_original_filename,
+    return Response(
+        content=file_data,
         media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{record.cv_original_filename}"'
+            )
+        },
     )
 
 

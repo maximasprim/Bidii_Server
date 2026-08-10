@@ -21,6 +21,11 @@ class Settings(BaseSettings):
 
     database_url: str = f"sqlite:///{BASE_DIR / 'bidii.db'}"
 
+    #Recently added supabase bucket for file uploads - Supabase configuration
+    supabase_url: str
+    supabase_service_role_key: str
+    supabase_bucket: str = "Bidii-Uploads"
+
     # Comma-separated list of allowed frontend origins. Defaults cover the
     # Vite dev server and preview server ports used by the Bidii Credit
     # frontend during local development.

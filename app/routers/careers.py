@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.career_application import CareerApplication
 from app.models.job_opening import JobOpening
 from app.schemas.career_application import CareerApplicationCreateResponse, CareerApplicationRead
+from app.services.storage import supabase, BUCKET
 
 logger = logging.getLogger("bidii.careers")
 
@@ -80,13 +81,36 @@ async def submit_career_application(
     if len(contents) == 0:
         raise HTTPException(status_code=422, detail="The uploaded CV file is empty.")
 
-    settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    careers_dir = settings.upload_dir / "careers"
-    careers_dir.mkdir(parents=True, exist_ok=True)
+    # settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    # careers_dir = settings.upload_dir / "careers"
+    # careers_dir.mkdir(parents=True, exist_ok=True)
 
+    # original_name = _safe_filename(cv.filename or "cv.pdf")
+    # stored_name = f"{uuid.uuid4()}_{original_name}"
+    # (careers_dir / stored_name).write_bytes(contents)
     original_name = _safe_filename(cv.filename or "cv.pdf")
+
     stored_name = f"{uuid.uuid4()}_{original_name}"
-    (careers_dir / stored_name).write_bytes(contents)
+    storage_path = f"careers/{stored_name}"
+
+    try:
+        supabase.storage.from_(BUCKET).upload(
+            storage_path,
+            contents,
+            {
+                   "content-type": "application/pdf",
+                   "upsert": False,
+            },
+       )
+
+        logger.info("CV uploaded to Supabase Storage: %s", storage_path)
+
+    except Exception as exc:
+        logger.exception("Failed to upload CV to Supabase Storage")
+        raise HTTPException(
+           status_code=500,
+           detail="Failed to store CV. Please try again.",
+        )  from exc
 
     record = CareerApplication(
         job_id=job_id or None,
@@ -96,7 +120,7 @@ async def submit_career_application(
         role=resolved_role,
         cover_note=cover_note,
         cv_original_filename=original_name,
-        cv_stored_filename=stored_name,
+        cv_stored_filename=storage_path,
     )
     db.add(record)
     db.commit()

@@ -1,2 +1,4 @@
 ###
 GET http://localhost:8000/api/health
+###
+GET https://bidii-server.onrender.com/api/health
