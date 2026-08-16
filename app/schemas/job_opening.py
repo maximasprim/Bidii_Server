@@ -12,6 +12,8 @@ class JobOpeningCreate(BaseModel):
     location: str = Field(min_length=2, max_length=150)
     type: JobType
     description: str = Field(min_length=10, max_length=3000)
+    requirements: list[str] = Field(default_factory=list, max_length=30)
+    responsibilities: list[str] = Field(default_factory=list, max_length=30)
     is_open: bool = True
     slug: str | None = Field(default=None, max_length=200)
 
@@ -22,6 +24,8 @@ class JobOpeningUpdate(BaseModel):
     location: str | None = Field(default=None, min_length=2, max_length=150)
     type: JobType | None = None
     description: str | None = Field(default=None, min_length=10, max_length=3000)
+    requirements: list[str] = Field(default_factory=list, max_length=30)
+    responsibilities: list[str] = Field(default_factory=list, max_length=30)
     is_open: bool | None = None
     slug: str | None = Field(default=None, max_length=200)
 
@@ -36,6 +40,8 @@ class JobOpeningRead(BaseModel):
     location: str
     type: str
     description: str
+    requirements: list[str] = Field(default_factory=list)
+    responsibilities: list[str] = Field(default_factory=list)
     is_open: bool
     created_at: datetime
     updated_at: datetime

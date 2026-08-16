@@ -1,11 +1,14 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+AdminRole = Literal["admin", "loan_officer"]
 
 class AdminUserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=100)
     password: str = Field(min_length=8, max_length=200)
+    role: AdminRole = "admin"
 
 
 class AdminUserUpdate(BaseModel):
@@ -13,6 +16,7 @@ class AdminUserUpdate(BaseModel):
 
     username: str | None = Field(default=None, min_length=3, max_length=100)
     password: str | None = Field(default=None, min_length=8, max_length=200)
+    role: AdminRole | None = None
     is_active: bool | None = None
 
 
@@ -21,6 +25,7 @@ class AdminUserRead(BaseModel):
 
     id: str
     username: str
+    role: str
     is_active: bool
     created_at: datetime
 

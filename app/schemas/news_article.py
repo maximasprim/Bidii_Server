@@ -11,6 +11,7 @@ class NewsArticleCreate(BaseModel):
     category: Category
     excerpt: str = Field(min_length=10, max_length=500)
     body: list[str] = Field(min_length=1)
+    image_urls: list[str] = Field(default_factory=list, max_length=20)
     is_published: bool = True
     # Optional — auto-generated from the title if not provided.
     slug: str | None = Field(default=None, max_length=200)
@@ -21,6 +22,7 @@ class NewsArticleUpdate(BaseModel):
     category: Category | None = None
     excerpt: str | None = Field(default=None, min_length=10, max_length=500)
     body: list[str] | None = Field(default=None, min_length=1)
+    image_urls: list[str] = Field(default_factory=list, max_length=20)
     is_published: bool | None = None
     slug: str | None = Field(default=None, max_length=200)
 
@@ -34,10 +36,17 @@ class NewsArticleRead(BaseModel):
     category: str
     excerpt: str
     body: list[str]
+    image_urls: list[str] = Field(default_factory=list, max_length=20)
     is_published: bool
     published_at: datetime
     created_at: datetime
     updated_at: datetime
+
+
+class NewsImageUploadResponse(BaseModel):
+    success: bool = True
+    message: str = "Image uploaded."
+    url: str
 
 
 class NewsArticleCreateResponse(BaseModel):

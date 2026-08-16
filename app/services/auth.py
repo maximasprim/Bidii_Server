@@ -24,9 +24,24 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
-def create_access_token(subject: str) -> str:
+# def create_access_token(subject: str) -> str:
+#     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expiry_minutes)
+#     payload = {"sub": subject, "exp": expire}
+#     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+def create_access_token(subject: str, role: str | None = None) -> str:
+    """
+    role is embedded in the signed payload purely so the frontend can read
+    "who am I" (e.g. to decide whether to show internal loan-tier figures)
+    via a client-side decode, the same way it already reads `sub` — since
+    the token is signed, the claim can't be tampered with client-side
+    without invalidating the signature. Every server-side authorization
+    check still re-reads the role from the DB (see require_roles below),
+    never trusting this claim on its own.
+    """
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expiry_minutes)
-    payload = {"sub": subject, "exp": expire}
+    payload: dict = {"sub": subject, "exp": expire}
+    if role is not None:
+        payload["role"] = role
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
@@ -78,3 +93,22 @@ def get_current_admin(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
+
+def require_roles(*allowed_roles: str):
+    """
+    FastAPI dependency factory — use as Depends(require_roles("admin", "loan_officer"))
+    to restrict a route to specific AdminUser roles, on top of the normal
+    get_current_admin authentication check. Always re-checks the role from
+    the DB-backed user object (not from the JWT's role claim), so a role
+    change takes effect immediately rather than only once a token expires.
+    """
+
+    def dependency(current_admin=Depends(get_current_admin)):
+        if current_admin.role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to access this.",
+            )
+        return current_admin
+
+    return dependency

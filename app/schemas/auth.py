@@ -11,3 +11,4 @@ class AdminLoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in_minutes: int
+    role: str

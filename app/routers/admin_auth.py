@@ -36,5 +36,5 @@ def admin_login(payload: AdminLoginRequest, db: Session = Depends(get_db)) -> Ad
         logger.warning("Failed admin login attempt for username=%r", payload.username)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password.")
 
-    token = create_access_token(subject=user.id)
-    return AdminLoginResponse(access_token=token, expires_in_minutes=settings.jwt_expiry_minutes)
+    token = create_access_token(subject=user.id, role=user.role)
+    return AdminLoginResponse(access_token=token, expires_in_minutes=settings.jwt_expiry_minutes, role=user.role)

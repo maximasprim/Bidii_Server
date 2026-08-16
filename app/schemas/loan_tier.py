@@ -83,6 +83,36 @@ class LoanTierRead(BaseModel):
     updated_at: datetime
 
 
+class LoanTierPublicRead(BaseModel):
+    """
+    What the public Loan Calculator/Apply flow gets — enough to compute
+    and display the repayment schedule (amount/term bounds, rate, and the
+    tracking fee, which is itself an editable public input on logbook
+    products) without exposing internal fee rates/amounts (processing fee
+    %, life insurance fee %, chattel/incharge fees, excise duty rate,
+    guarantor counts). Those stay restricted to admins and loan officers —
+    see LoanTierRead / GET /api/loan-tiers/internal.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    product_slug: str
+    tier_key: str
+    label: str
+    min_amount: float
+    max_amount: float
+    term_unit: str
+    min_term: int
+    max_term: int
+    repayment_frequency: str
+    interest_rate: float
+    interest_basis: str
+    tracking_fee_per_month: float
+    display_order: int
+    is_active: bool
+
+
 class LoanTierCreateResponse(BaseModel):
     success: bool = True
     message: str = "Loan tier created."
@@ -97,3 +127,8 @@ class LoanTierUpdateResponse(BaseModel):
 
 class LoanTierListResponse(BaseModel):
     items: list[LoanTierRead]
+
+
+class LoanTierPublicListResponse(BaseModel):
+    items: list[LoanTierPublicRead]
+    

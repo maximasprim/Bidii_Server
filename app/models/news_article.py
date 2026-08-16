@@ -19,6 +19,7 @@ class NewsArticle(Base):
     excerpt: Mapped[str] = mapped_column(Text)
     # List of paragraph strings — matches the frontend's Article.body: string[].
     body: Mapped[list] = mapped_column(JSON)
+    image_urls: Mapped[list] = mapped_column(JSON, default=list)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True)
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
