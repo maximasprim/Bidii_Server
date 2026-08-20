@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.database import get_db
 from app.models.admin_user import AdminUser
-from app.models.ats import ATSConfiguration, ATSCriterion
+from app.models.ats import ATSConfiguration, ATSCriterion, ATSEvaluationMode
 from app.models.job_opening import JobOpening
 from app.schemas.ats import (
     ATSConfigurationCreate,
@@ -105,6 +105,9 @@ def create_job_configuration(
         auto_reject_enabled=payload.auto_reject_enabled,
         minimum_recommend_score=payload.minimum_recommend_score,
         minimum_review_score=payload.minimum_review_score,
+        evaluation_mode=payload.evaluation_mode,
+        ai_provider=payload.ai_provider,
+        ai_model=payload.ai_model,
     )
     db.add(config)
     db.flush()  # assigns config.id without committing yet
@@ -149,6 +152,18 @@ def update_configuration(
         config.minimum_recommend_score = payload.minimum_recommend_score
     if payload.minimum_review_score is not None:
         config.minimum_review_score = payload.minimum_review_score
+    if payload.evaluation_mode is not None:
+        config.evaluation_mode = payload.evaluation_mode
+    if payload.ai_provider is not None:
+        config.ai_provider = payload.ai_provider
+    if payload.ai_model is not None:
+        config.ai_model = payload.ai_model
+
+    if config.evaluation_mode == ATSEvaluationMode.ai and config.ai_provider is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Select an AI provider (OpenAI or Gemini) before switching this job to AI Evaluation.",
+)
 
     db.commit()
     db.refresh(config)

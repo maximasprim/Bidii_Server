@@ -42,6 +42,18 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expiry_minutes: int = 480  # 8 hour admin session
 
+    # --- AI ATS Evaluation / AI Job Generation ---------------------------
+    # All optional. Weighted scoring (the original ATS) works with none of
+    # these set. AI Evaluation only becomes usable once the relevant key is
+    # present here — see app/services/ai_providers/factory.py, the single
+    # place that reads these. Never sent to the frontend; only a per-provider
+    # `configured: true/false` boolean is exposed via GET /api/admin/ai/providers.
+    openai_api_key: str | None = None
+    openai_default_model: str = "gpt-4o-mini"
+    gemini_api_key: str | None = None
+    gemini_default_model: str = "gemini-1.5-flash"
+    ai_request_timeout_seconds: int = 30
+    
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

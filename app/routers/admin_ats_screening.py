@@ -4,10 +4,20 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.models.admin_user import AdminUser
-from app.models.ats import ATSAuditAction, ATSAuditLog, ATSConfiguration, ATSRecommendation, ATSScreeningResult
+from app.models.ats import (
+    ATSAIProviderName,
+    ATSAuditAction,
+    ATSAuditLog,
+    ATSConfiguration,
+    ATSEvaluationMode,
+    ATSRecommendation,
+    ATSScreeningResult,
+)
 from app.models.career_application import CareerApplication, CareerApplicationStatus
+from app.models.job_opening import JobOpening
 from app.schemas.admin import PageMeta
 from app.schemas.ats import (
     ATSScreenAllResponse,
@@ -17,6 +27,9 @@ from app.schemas.ats import (
     CareerApplicationWithATS,
     PaginatedATSApplications,
 )
+from app.services.ai_providers.base import AIProviderError
+from app.services.ai_providers.factory import default_model_for
+from app.services.ats_ai_evaluation import evaluate_candidate_with_ai
 from app.services.ats_scoring import score_application
 from app.services.auth import get_current_admin
 
@@ -27,6 +40,10 @@ router = APIRouter(
 )
 
 
+class ScreeningUnavailableError(Exception):
+    """AI evaluation failed and this job has no weighted criteria to fall back to."""
+
+
 def _to_result_read(result: ATSScreeningResult) -> ATSScreeningResultRead:
     data = ATSScreeningResultRead.model_validate(result)
     data.score_percentage = round(
@@ -35,17 +52,25 @@ def _to_result_read(result: ATSScreeningResult) -> ATSScreeningResultRead:
     return data
 
 
-def _run_screening(
-    db: Session, application: CareerApplication, config: ATSConfiguration, admin_id: str | None
-) -> ATSScreeningResult:
-    outcome = score_application(application, config)
-
-    result = db.query(ATSScreeningResult).filter(ATSScreeningResult.application_id == application.id).first()
+def _get_or_create_result(db: Session, application_id: str) -> tuple[ATSScreeningResult, str | None]:
+    result = db.query(ATSScreeningResult).filter(ATSScreeningResult.application_id == application_id).first()
     previous_recommendation = result.system_recommendation.value if result else None
-
     if result is None:
-        result = ATSScreeningResult(application_id=application.id)
+        result = ATSScreeningResult(application_id=application_id)
         db.add(result)
+    return result, previous_recommendation
+
+
+def _run_weighted_screening(
+    db: Session,
+    application: CareerApplication,
+    config: ATSConfiguration,
+    admin_id: str | None,
+    manual_method_override: str | None = None,
+) -> ATSScreeningResult:
+    """The original weighted-scoring engine — completely unchanged (app/services/ats_scoring.py)."""
+    outcome = score_application(application, config)
+    result, previous_recommendation = _get_or_create_result(db, application.id)
 
     result.config_id = config.id
     result.total_score = outcome.total_score
@@ -57,20 +82,28 @@ def _run_screening(
     result.has_failed_mandatory = bool(outcome.failed_mandatory)
     result.auto_scored = True
     result.scored_at = datetime.now(timezone.utc)
+    result.evaluation_method = ATSEvaluationMode.weighted
+    result.ai_provider = None
+    result.ai_model = None
+    result.ai_strengths = []
+    result.ai_weaknesses = []
+    result.ai_explanation = None
+    # Cleared here, then re-set by the AI-fallback caller right after this
+    # returns — so a genuine fallback still shows its banner, but a plain
+    # weighted re-screen (including a manual override away from AI) doesn't
+    # keep showing a stale "AI was unavailable" notice from a previous run.
+    result.ai_fallback_reason = None
 
-    db.add(
-        ATSAuditLog(
-            application_id=application.id,
-            admin_id=admin_id,
-            action=ATSAuditAction.screened,
-            details={
-                "previous_recommendation": previous_recommendation,
-                "new_recommendation": outcome.recommendation.value,
-                "score_percentage": outcome.score_percentage,
-                "failed_mandatory_count": len(outcome.failed_mandatory),
-            },
-        )
-    )
+    details = {
+        "evaluation_method": "weighted",
+        "previous_recommendation": previous_recommendation,
+        "new_recommendation": outcome.recommendation.value,
+        "score_percentage": outcome.score_percentage,
+        "failed_mandatory_count": len(outcome.failed_mandatory),
+    }
+    if manual_method_override:
+        details["manual_override"] = manual_method_override
+    db.add(ATSAuditLog(application_id=application.id, admin_id=admin_id, action=ATSAuditAction.screened, details=details))
 
     if outcome.should_auto_reject and application.status != CareerApplicationStatus.rejected:
         application.status = CareerApplicationStatus.rejected
@@ -86,9 +119,145 @@ def _run_screening(
     return result
 
 
+def _run_ai_screening(
+    db: Session,
+    application: CareerApplication,
+    job: JobOpening,
+    config: ATSConfiguration,
+    admin_id: str | None,
+    manual_method_override: str | None = None,
+) -> ATSScreeningResult:
+    """
+    Raises whatever app.services.ats_ai_evaluation.evaluate_candidate_with_ai
+    raises (AIProviderError family) - callers decide whether to fall back to
+    weighted scoring. Never touches CareerApplication.status: AI assists
+    vetting, it never auto-rejects.
+    """
+    settings = get_settings()
+    provider_name = config.ai_provider.value if config.ai_provider else None
+    if not provider_name:
+        raise AIProviderError("This job is set to AI Evaluation but no AI provider is selected.")
+    model = config.ai_model or default_model_for(provider_name)
+
+    ai_result = evaluate_candidate_with_ai(
+        job=job,
+        application=application,
+        provider_name=provider_name,
+        model=model,
+        timeout_seconds=settings.ai_request_timeout_seconds,
+    )
+
+    result, previous_recommendation = _get_or_create_result(db, application.id)
+    result.config_id = config.id
+    result.total_score = ai_result.score_percentage
+    result.max_possible_score = 100.0
+    result.system_recommendation = ATSRecommendation(ai_result.recommendation)
+    result.matched_criteria = [{"label": r.label, "detail": r.detail} for r in ai_result.matched_requirements]
+    result.missing_criteria = [{"label": r.label, "detail": r.detail} for r in ai_result.missing_requirements]
+    # AI evaluation doesn't use the weighted engine's required/weight concept,
+    # so it never marks "failed mandatory criteria" or drives auto-reject -
+    # see module docstring: AI assists vetting, it never auto-rejects.
+    result.failed_mandatory_criteria = []
+    result.has_failed_mandatory = False
+    result.auto_scored = True
+    result.scored_at = datetime.now(timezone.utc)
+    result.evaluation_method = ATSEvaluationMode.ai
+    result.ai_provider = ATSAIProviderName(ai_result.provider)
+    result.ai_model = ai_result.model
+    result.ai_strengths = ai_result.strengths
+    result.ai_weaknesses = ai_result.weaknesses
+    result.ai_explanation = ai_result.explanation
+    result.ai_fallback_reason = None
+
+    db.add(
+        ATSAuditLog(
+            application_id=application.id,
+            admin_id=admin_id,
+            action=ATSAuditAction.screened,
+            details={
+                "evaluation_method": "ai",
+                "provider": ai_result.provider,
+                "model": ai_result.model,
+                "previous_recommendation": previous_recommendation,
+                "new_recommendation": ai_result.recommendation,
+                "score_percentage": ai_result.score_percentage,
+                "cv_text_used": ai_result.cv_text_used,
+                **({"manual_override": manual_method_override} if manual_method_override else {}),
+            },
+        )
+    )
+
+    return result
+
+
+def _run_screening(
+    db: Session,
+    application: CareerApplication,
+    job: JobOpening,
+    config: ATSConfiguration,
+    admin_id: str | None,
+    mode: ATSEvaluationMode | None = None,
+) -> ATSScreeningResult:
+    """
+    Dispatches to AI or weighted evaluation. Uses `mode` if given — an
+    explicit one-off override so a candidate can be re-screened with the
+    *other* engine without changing the job's saved evaluation_mode — and
+    falls back to config.evaluation_mode when `mode` is None (the normal,
+    non-override path). If AI evaluation is selected but fails for any
+    reason (not configured, timeout, rate limit, invalid response, any
+    other provider error), this automatically falls back to weighted
+    scoring using the job's configured criteria - the existing weighted
+    engine is always the safety net, exactly as it was before AI
+    evaluation existed. Only raises ScreeningUnavailableError if AI fails
+    AND the job has no weighted criteria to fall back to either.
+    """
+    effective_mode = mode if mode is not None else config.evaluation_mode
+    manual_override = mode.value if (mode is not None and mode != config.evaluation_mode) else None
+
+    if effective_mode != ATSEvaluationMode.ai:
+        return _run_weighted_screening(db, application, config, admin_id, manual_method_override=manual_override)
+
+    try:
+        return _run_ai_screening(db, application, job, config, admin_id, manual_method_override=manual_override)
+    except AIProviderError as exc:
+        logger.warning("AI evaluation failed for application %r, falling back if possible: %s", application.id, exc)
+        db.add(
+            ATSAuditLog(
+                application_id=application.id,
+                admin_id=admin_id,
+                action=ATSAuditAction.ai_evaluation_failed,
+                details={"provider": config.ai_provider.value if config.ai_provider else None, "error": str(exc)},
+            )
+        )
+        if not config.criteria:
+            raise ScreeningUnavailableError(
+                f"AI evaluation failed ({exc}) and this job has no weighted criteria configured as a fallback. "
+                "Add weighted criteria in ATS Configuration, or fix the AI provider setup, then try again."
+            ) from exc
+
+        result = _run_weighted_screening(db, application, config, admin_id, manual_method_override=manual_override)
+        result.ai_fallback_reason = str(exc)
+        db.add(
+            ATSAuditLog(
+                application_id=application.id,
+                admin_id=admin_id,
+                action=ATSAuditAction.ai_fallback_to_weighted,
+                details={"reason": str(exc)},
+            )
+        )
+        return result
+
+
 @router.post("/applications/{application_id}/screen", response_model=ATSScreenResponse)
 def screen_application(
     application_id: str,
+    method: ATSEvaluationMode | None = Query(
+        None,
+        description=(
+            "Override which engine runs for this screening only (weighted or ai), without changing the "
+            "job's saved evaluation_mode. Omit to use the job's currently configured method."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin),
 ) -> ATSScreenResponse:
@@ -108,19 +277,50 @@ def screen_application(
         )
     if not config.is_scoring_enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Automatic scoring is disabled for this job.")
+    if method == ATSEvaluationMode.ai and config.ai_provider is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Select an AI provider (OpenAI or Gemini) for this job in ATS Configuration before re-screening with AI.",
+        )
 
-    result = _run_screening(db, application, config, current_admin.id)
+    job = db.query(JobOpening).filter(JobOpening.id == application.job_id).first()
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The job this candidate applied for no longer exists.")
+
+    try:
+        result = _run_screening(db, application, job, config, current_admin.id, mode=method)
+    except ScreeningUnavailableError as exc:
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
     db.commit()
     db.refresh(result)
 
-    logger.info("Admin %r screened application %r (score=%s%%)", current_admin.username, application_id, result.total_score)
-    return ATSScreenResponse(data=_to_result_read(result))
+    logger.info(
+        "Admin %r screened application %r via %s (score=%s%%)%s",
+        current_admin.username,
+        application_id,
+        result.evaluation_method.value,
+        result.total_score,
+        f" [manual override: {method.value}]" if method is not None else "",
+    )
+    message = "Application screened."
+    if result.ai_fallback_reason:
+        message = "AI evaluation was unavailable, so weighted scoring was used instead."
+    return ATSScreenResponse(message=message, data=_to_result_read(result))
 
 
 @router.post("/jobs/{job_id}/screen-all", response_model=ATSScreenAllResponse)
 def screen_all_for_job(
     job_id: str,
     rescore_all: bool = Query(False, description="If true, re-screen every application including already-screened ones."),
+    method: ATSEvaluationMode | None = Query(
+        None,
+        description=(
+            "Override which engine runs for every application in this batch, without changing the job's "
+            "saved evaluation_mode. Omit to use the job's currently configured method."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin),
 ) -> ATSScreenAllResponse:
@@ -129,6 +329,15 @@ def screen_all_for_job(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="This job has no ATS configuration yet.")
     if not config.is_scoring_enabled:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Automatic scoring is disabled for this job.")
+    if method == ATSEvaluationMode.ai and config.ai_provider is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Select an AI provider (OpenAI or Gemini) for this job in ATS Configuration before re-screening with AI.",
+        )
+
+    job = db.query(JobOpening).filter(JobOpening.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found.")
 
     applications = db.query(CareerApplication).filter(CareerApplication.job_id == job_id).all()
     if not rescore_all:
@@ -140,18 +349,35 @@ def screen_all_for_job(
         }
         applications = [a for a in applications if a.id not in already_screened_ids]
 
-    results = [_run_screening(db, app, config, current_admin.id) for app in applications]
+    results: list[ATSScreeningResult] = []
+    failures: list[dict] = []
+    for application in applications:
+        try:
+            results.append(_run_screening(db, application, job, config, current_admin.id, mode=method))
+        except ScreeningUnavailableError as exc:
+            # One candidate's AI+fallback failure doesn't abort the whole
+            # batch - every other application in this job still gets screened.
+            failures.append({"application_id": application.id, "full_name": application.full_name, "error": str(exc)})
+
     db.commit()
     for result in results:
         db.refresh(result)
 
     logger.info(
-        "Admin %r batch-screened %d application(s) for job %r", current_admin.username, len(results), job_id
+        "Admin %r batch-screened %d application(s) for job %r (%d failed)",
+        current_admin.username,
+        len(results),
+        job_id,
+        len(failures),
     )
+    message = f"Screened {len(results)} application(s)."
+    if failures:
+        message += f" {len(failures)} couldn't be screened - see details."
     return ATSScreenAllResponse(
-        message=f"Screened {len(results)} application(s).",
+        message=message,
         screened_count=len(results),
         results=[_to_result_read(r) for r in results],
+        failed=failures,
     )
 
 
@@ -165,6 +391,7 @@ def list_screened_applications(
     min_score: float | None = Query(None, ge=0, le=100),
     max_score: float | None = Query(None, ge=0, le=100),
     mandatory_failed: bool | None = Query(None, description="True = only candidates who failed a mandatory criterion."),
+    evaluation_method: ATSEvaluationMode | None = None,
     sort_by: str = Query("date", pattern="^(date|score)$"),
     sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     db: Session = Depends(get_db),
@@ -172,7 +399,7 @@ def list_screened_applications(
     """
     Career applications enriched with their latest ATS screening result (if
     any). This is a read-only view built on top of career_applications +
-    ats_screening_results — it never modifies either table, and an
+    ats_screening_results - it never modifies either table, and an
     application with no screening result yet still shows up normally
     (screening: null) when no ATS filters are applied.
     """
@@ -200,6 +427,8 @@ def list_screened_applications(
         query = query.filter(
             (ATSScreeningResult.has_failed_mandatory.is_(False)) | (ATSScreeningResult.has_failed_mandatory.is_(None))
         )
+    if evaluation_method is not None:
+        query = query.filter(ATSScreeningResult.evaluation_method == evaluation_method)
 
     total = query.count()
 

@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.database import Base, SessionLocal, engine
 from app.routers import (
     admin,
+    admin_ai,
     admin_ats_config,
     admin_ats_screening,
     admin_ats_vetting,
@@ -69,6 +70,37 @@ def _migrate_schema() -> None:
         columns = {c["name"] for c in inspector.get_columns("news_articles")}
         if "image_urls" not in columns:
             statements.append("ALTER TABLE news_articles ADD COLUMN image_urls JSON DEFAULT '[]'")
+
+    # AI ATS Evaluation columns — added after ats_configurations /
+    # ats_screening_results already existed on some deployments. All
+    # default to the weighted-scoring behavior (evaluation_mode='weighted',
+    # everything AI-related NULL/empty), so this is a no-op for anyone not
+    # opting into AI evaluation.
+    if "ats_configurations" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("ats_configurations")}
+        if "evaluation_mode" not in columns:
+            statements.append("ALTER TABLE ats_configurations ADD COLUMN evaluation_mode VARCHAR(20) DEFAULT 'weighted'")
+        if "ai_provider" not in columns:
+            statements.append("ALTER TABLE ats_configurations ADD COLUMN ai_provider VARCHAR(20)")
+        if "ai_model" not in columns:
+            statements.append("ALTER TABLE ats_configurations ADD COLUMN ai_model VARCHAR(100)")
+
+    if "ats_screening_results" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("ats_screening_results")}
+        if "evaluation_method" not in columns:
+            statements.append("ALTER TABLE ats_screening_results ADD COLUMN evaluation_method VARCHAR(20) DEFAULT 'weighted'")
+        if "ai_provider" not in columns:
+            statements.append("ALTER TABLE ats_screening_results ADD COLUMN ai_provider VARCHAR(20)")
+        if "ai_model" not in columns:
+            statements.append("ALTER TABLE ats_screening_results ADD COLUMN ai_model VARCHAR(100)")
+        if "ai_strengths" not in columns:
+            statements.append("ALTER TABLE ats_screening_results ADD COLUMN ai_strengths JSON DEFAULT '[]'")
+        if "ai_weaknesses" not in columns:
+            statements.append("ALTER TABLE ats_screening_results ADD COLUMN ai_weaknesses JSON DEFAULT '[]'")
+        if "ai_explanation" not in columns:
+            statements.append("ALTER TABLE ats_screening_results ADD COLUMN ai_explanation TEXT")
+        if "ai_fallback_reason" not in columns:
+            statements.append("ALTER TABLE ats_screening_results ADD COLUMN ai_fallback_reason TEXT")
 
     if not statements:
         return
@@ -208,6 +240,7 @@ app.include_router(admin_loan_tiers.router)
 app.include_router(admin_ats_config.router)
 app.include_router(admin_ats_screening.router)
 app.include_router(admin_ats_vetting.router)
+app.include_router(admin_ai.router)
 
 # Self-contained admin dashboard (login, stats, submissions) — a static
 # HTML/CSS/JS page with no build step, served at /admin/. It talks to the

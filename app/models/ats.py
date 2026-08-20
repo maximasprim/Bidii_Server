@@ -50,6 +50,20 @@ class ATSAuditAction(str, enum.Enum):
     auto_rejected = "auto_rejected"
     recommendation_overridden = "recommendation_overridden"
     note_added = "note_added"
+    ai_evaluation_failed = "ai_evaluation_failed"
+    ai_fallback_to_weighted = "ai_fallback_to_weighted"
+
+
+class ATSEvaluationMode(str, enum.Enum):
+    """Which engine ATSConfiguration.evaluation_mode selects for a job."""
+
+    weighted = "weighted"
+    ai = "ai"
+
+
+class ATSAIProviderName(str, enum.Enum):
+    openai = "openai"
+    gemini = "gemini"
 
 
 class ATSConfiguration(Base):
@@ -78,6 +92,13 @@ class ATSConfiguration(Base):
     # < minimum_review_score -> "not_recommended"; in between -> "review".
     minimum_recommend_score: Mapped[float] = mapped_column(Float, default=70.0)
     minimum_review_score: Mapped[float] = mapped_column(Float, default=40.0)
+
+    # Which engine actually runs when this job is screened. Weighted
+    # scoring (ats_scoring.py) is untouched and remains the default — AI
+    # evaluation is strictly opt-in per job. See app/services/ats_ai_evaluation.py.
+    evaluation_mode: Mapped[ATSEvaluationMode] = mapped_column(Enum(ATSEvaluationMode), default=ATSEvaluationMode.weighted)
+    ai_provider: Mapped[ATSAIProviderName | None] = mapped_column(Enum(ATSAIProviderName), nullable=True)
+    ai_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -167,6 +188,20 @@ class ATSScreeningResult(Base):
     scored_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+    # --- AI evaluation fields (all null/empty in weighted mode) -----------
+    # Which engine actually produced this result — independent of the
+    # job's *current* ATSConfiguration.evaluation_mode, so a result stays
+    # self-describing even if the config is switched after the fact.
+    evaluation_method: Mapped[ATSEvaluationMode] = mapped_column(Enum(ATSEvaluationMode), default=ATSEvaluationMode.weighted)
+    ai_provider: Mapped[ATSAIProviderName | None] = mapped_column(Enum(ATSAIProviderName), nullable=True)
+    ai_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    ai_strengths: Mapped[list] = mapped_column(JSON, default=list)
+    ai_weaknesses: Mapped[list] = mapped_column(JSON, default=list)
+    ai_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set when AI evaluation was attempted but failed and this result is a
+    # weighted-scoring fallback instead — see ATSAuditAction.ai_fallback_to_weighted.
+    ai_fallback_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ATSRecruiterNote(Base):

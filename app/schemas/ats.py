@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.ats import ATSAuditAction, ATSCriterionCategory, ATSRecommendation
+from app.models.ats import ATSAIProviderName, ATSAuditAction, ATSCriterionCategory, ATSEvaluationMode, ATSRecommendation
 from app.schemas.admin import PageMeta
 from app.schemas.career_application import CareerApplicationRead
 from app.schemas.job_opening import JobOpeningRead
@@ -56,6 +56,9 @@ class ATSConfigurationCreate(BaseModel):
     minimum_recommend_score: float = Field(default=70.0, ge=0, le=100)
     minimum_review_score: float = Field(default=40.0, ge=0, le=100)
     criteria: list[ATSCriterionCreate] = Field(default_factory=list)
+    evaluation_mode: ATSEvaluationMode = ATSEvaluationMode.weighted
+    ai_provider: ATSAIProviderName | None = None
+    ai_model: str | None = Field(default=None, max_length=100)
 
 
 class ATSConfigurationUpdate(BaseModel):
@@ -63,6 +66,9 @@ class ATSConfigurationUpdate(BaseModel):
     auto_reject_enabled: bool | None = None
     minimum_recommend_score: float | None = Field(default=None, ge=0, le=100)
     minimum_review_score: float | None = Field(default=None, ge=0, le=100)
+    evaluation_mode: ATSEvaluationMode | None = None
+    ai_provider: ATSAIProviderName | None = None
+    ai_model: str | None = Field(default=None, max_length=100)
 
 
 class ATSConfigurationRead(BaseModel):
@@ -77,6 +83,9 @@ class ATSConfigurationRead(BaseModel):
     criteria: list[ATSCriterionRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    evaluation_mode: ATSEvaluationMode = ATSEvaluationMode.weighted
+    ai_provider: ATSAIProviderName | None = None
+    ai_model: str | None = None
 
 
 class ATSConfigurationWithJob(ATSConfigurationRead):
@@ -107,7 +116,14 @@ class ATSCriterionResponse(BaseModel):
 
 
 class ATSCriterionOutcome(BaseModel):
-    """Shape of each entry stored in matched/missing/failed_mandatory JSON columns."""
+    """
+    Shape of each entry in matched_criteria/missing_criteria for WEIGHTED
+    mode. AI mode entries are shaped {label, detail} instead (see
+    AIRequirementOutcome) — both are stored as plain JSON, so
+    ATSScreeningResultRead types those fields as list[dict] and the
+    frontend renders whichever shape is present (they always share
+    "label"). This class exists for backend-side documentation/reference.
+    """
 
     criterion_id: str
     label: str
@@ -130,11 +146,18 @@ class ATSScreeningResultRead(BaseModel):
     override_reason: str | None
     override_by: str | None
     overridden_at: datetime | None
-    matched_criteria: list[ATSCriterionOutcome] = Field(default_factory=list)
-    missing_criteria: list[ATSCriterionOutcome] = Field(default_factory=list)
-    failed_mandatory_criteria: list[ATSCriterionOutcome] = Field(default_factory=list)
+    matched_criteria: list[dict] = Field(default_factory=list)
+    missing_criteria: list[dict] = Field(default_factory=list)
+    failed_mandatory_criteria: list[dict] = Field(default_factory=list)
     auto_scored: bool
     scored_at: datetime
+    evaluation_method: ATSEvaluationMode = ATSEvaluationMode.weighted
+    ai_provider: ATSAIProviderName | None = None
+    ai_model: str | None = None
+    ai_strengths: list[str] = Field(default_factory=list)
+    ai_weaknesses: list[str] = Field(default_factory=list)
+    ai_explanation: str | None = None
+    ai_fallback_reason: str | None = None
 
     @property
     def final_recommendation(self) -> ATSRecommendation:
@@ -152,6 +175,7 @@ class ATSScreenAllResponse(BaseModel):
     message: str
     screened_count: int
     results: list[ATSScreeningResultRead]
+    failed: list[dict] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -237,3 +261,69 @@ class ATSStats(BaseModel):
     review_count: int
     not_recommended_count: int
     average_score_percentage: float
+
+
+# ---------------------------------------------------------------------------
+# AI providers (status + job draft generation)
+# ---------------------------------------------------------------------------
+
+
+class ATSAIProviderStatus(BaseModel):
+    configured: bool
+    default_model: str
+
+
+class ATSAIProvidersResponse(BaseModel):
+    providers: dict[str, ATSAIProviderStatus]
+
+
+class AIJobGenerateRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=200)
+    provider: ATSAIProviderName
+    model: str | None = Field(default=None, max_length=100)
+
+
+class AIJobDraftData(BaseModel):
+    summary: str
+    description: str
+    responsibilities: list[str] = Field(default_factory=list)
+    requirements: list[str] = Field(default_factory=list)
+    provider: str
+    model: str
+
+
+class AIJobGenerateResponse(BaseModel):
+    success: bool = True
+    message: str = "Draft generated — review and edit before publishing."
+    data: AIJobDraftData
+
+
+# ---------------------------------------------------------------------------
+# AI screening-criteria suggestion
+# ---------------------------------------------------------------------------
+
+
+class AICriteriaGenerateRequest(BaseModel):
+    provider: ATSAIProviderName
+    model: str | None = Field(default=None, max_length=100)
+
+
+class AISuggestedCriterionData(BaseModel):
+    category: ATSCriterionCategory
+    label: str
+    description: str = ""
+    match_keywords: list[str] = Field(default_factory=list)
+    weight: float = 10.0
+    is_required: bool = False
+
+
+class AICriteriaSuggestionData(BaseModel):
+    criteria: list[AISuggestedCriterionData]
+    provider: str
+    model: str
+
+
+class AICriteriaGenerateResponse(BaseModel):
+    success: bool = True
+    message: str = "Suggested criteria generated — review and edit before adding."
+    data: AICriteriaSuggestionData
