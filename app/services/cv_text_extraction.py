@@ -1,14 +1,12 @@
 """
-CV text extraction — used ONLY by AI evaluation (app/services/ats_ai_evaluation.py).
-
-The existing weighted-scoring engine (app/services/ats_scoring.py) deliberately
-never reads the CV file — see its module docstring. AI evaluation is a
-separate, opt-in path where reading the actual CV content is exactly the
-point, so this lives in its own module rather than touching that file.
+CV text extraction — shared by AI evaluation (app/services/ats_ai_evaluation.py)
+and weighted scoring (app/services/ats_scoring.py, called from the screening
+router). Both treat the CV as opt-in supporting text: it enriches the match,
+it's never required for either engine to run.
 
 Every failure here (download error, corrupt/unreadable PDF, empty result) is
 swallowed and returns None — a candidate whose CV can't be extracted still
-gets evaluated on their cover note; see prompts.py's handling of a missing
+gets evaluated on their cover note; see the callers' handling of a missing
 cv_text. Nothing here ever raises.
 """
 

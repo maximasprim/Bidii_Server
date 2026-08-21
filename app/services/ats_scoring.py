@@ -1,14 +1,20 @@
 """
 ATS scoring engine.
 
-Deliberately dependency-free (no CV/PDF text extraction) so the ATS module
-stays isolated and safe to deploy incrementally: it evaluates each
-criterion's `match_keywords` (case-insensitive substring match) against the
-text an applicant already gives us at submission time — their cover note
-and the role/title they applied for. This is an MVP scoring strategy; a
-criterion with no match_keywords configured is simply never matched, which
-is a reasonable, honest default (there's nothing to auto-evaluate it
-against) rather than guessing.
+Evaluates each criterion's `match_keywords` (case-insensitive substring
+match) against the text an applicant supplies. Originally this was
+deliberately limited to submission-time fields (cover note, applied-for
+role) to keep the module dependency-free and I/O-free — but AI-suggested
+criteria (see app/services/ai_criteria_suggestion.py) draft keywords from
+the job's own requirements, which a candidate's CV is far more likely to
+literally contain than a short cover note. So this module now also
+matches against CV text when the caller has it — extraction itself
+still happens elsewhere (app/services/cv_text_extraction.py, called from
+the screening router) so this module stays I/O-free and easy to test in
+isolation; it just accepts the already-extracted text as a plain string.
+A criterion with no match_keywords configured is simply never matched,
+which is a reasonable, honest default (there's nothing to auto-evaluate
+it against) rather than guessing.
 
 Nothing here touches CareerApplication.status except the one explicit,
 opt-in auto-reject path described below.
@@ -30,6 +36,7 @@ class ScoringOutcome:
     missing: list[dict] = field(default_factory=list)
     failed_mandatory: list[dict] = field(default_factory=list)
     should_auto_reject: bool = False
+    cv_text_used: bool = False
 
 
 def _criterion_outcome_dict(criterion: ATSCriterion) -> dict:
@@ -42,13 +49,15 @@ def _criterion_outcome_dict(criterion: ATSCriterion) -> dict:
     }
 
 
-def _searchable_text(application: CareerApplication) -> str:
+def _searchable_text(application: CareerApplication, cv_text: str | None) -> str:
     """
-    The text an application is screened against. Kept to fields supplied
-    directly by the applicant at submission time — cover_note and the
-    resolved role — so this never depends on parsing the uploaded CV file.
+    The text an application is screened against: the applicant's
+    submission-time fields (role, cover note) plus their CV text, when the
+    caller was able to extract it. cv_text is optional and best-effort —
+    a candidate whose CV couldn't be read still gets scored on whatever
+    text is available, same as before this method existed.
     """
-    parts = [application.role or "", application.cover_note or ""]
+    parts = [application.role or "", application.cover_note or "", cv_text or ""]
     return " \n ".join(parts).lower()
 
 
@@ -59,8 +68,10 @@ def _criterion_matches(criterion: ATSCriterion, text: str) -> bool:
     return any(str(keyword).strip().lower() in text for keyword in keywords if str(keyword).strip())
 
 
-def score_application(application: CareerApplication, config: ATSConfiguration) -> ScoringOutcome:
-    text = _searchable_text(application)
+def score_application(
+    application: CareerApplication, config: ATSConfiguration, cv_text: str | None = None
+) -> ScoringOutcome:
+    text = _searchable_text(application, cv_text)
     criteria: list[ATSCriterion] = list(config.criteria)
 
     matched: list[dict] = []
@@ -103,4 +114,5 @@ def score_application(application: CareerApplication, config: ATSConfiguration) 
         missing=missing,
         failed_mandatory=failed_mandatory,
         should_auto_reject=should_auto_reject,
+        cv_text_used=bool(cv_text),
     )

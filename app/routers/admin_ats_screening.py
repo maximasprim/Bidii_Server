@@ -32,6 +32,7 @@ from app.services.ai_providers.factory import default_model_for
 from app.services.ats_ai_evaluation import evaluate_candidate_with_ai
 from app.services.ats_scoring import score_application
 from app.services.auth import get_current_admin
+from app.services.cv_text_extraction import extract_cv_text
 
 logger = logging.getLogger("bidii.admin_ats_screening")
 
@@ -68,8 +69,9 @@ def _run_weighted_screening(
     admin_id: str | None,
     manual_method_override: str | None = None,
 ) -> ATSScreeningResult:
-    """The original weighted-scoring engine — completely unchanged (app/services/ats_scoring.py)."""
-    outcome = score_application(application, config)
+    """The weighted-scoring engine (app/services/ats_scoring.py) — now CV-aware, see that module's docstring."""
+    cv_text = extract_cv_text(application.cv_stored_filename) if application.cv_stored_filename else None
+    outcome = score_application(application, config, cv_text=cv_text)
     result, previous_recommendation = _get_or_create_result(db, application.id)
 
     result.config_id = config.id
@@ -100,6 +102,7 @@ def _run_weighted_screening(
         "new_recommendation": outcome.recommendation.value,
         "score_percentage": outcome.score_percentage,
         "failed_mandatory_count": len(outcome.failed_mandatory),
+        "cv_text_used": outcome.cv_text_used,
     }
     if manual_method_override:
         details["manual_override"] = manual_method_override
