@@ -34,7 +34,7 @@ from app.schemas.admin_user import (
 from app.schemas.career_application import CareerApplicationRead
 from app.schemas.contact import ContactRead
 from app.schemas.loan_application import LoanApplicationRead
-from app.services.auth import get_current_admin, hash_password
+from app.services.auth import get_current_admin, hash_password, require_roles
 from app.services.storage import supabase, BUCKET
 
 settings = get_settings()
@@ -303,13 +303,18 @@ def download_career_application_cv(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/users", response_model=AdminUserListResponse)
+@router.get("/users", response_model=AdminUserListResponse, dependencies=[Depends(require_roles("admin"))])
 def list_admin_users(db: Session = Depends(get_db)) -> AdminUserListResponse:
     users = db.query(AdminUser).order_by(AdminUser.created_at.asc()).all()
     return AdminUserListResponse(items=[AdminUserRead.model_validate(u) for u in users])
 
 
-@router.post("/users", response_model=AdminUserCreateResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/users",
+    response_model=AdminUserCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_roles("admin"))],
+)
 def create_admin_user(
     payload: AdminUserCreate,
     db: Session = Depends(get_db),
@@ -334,7 +339,7 @@ def create_admin_user(
     return AdminUserCreateResponse(data=AdminUserRead.model_validate(user))
 
 
-@router.delete("/users/{user_id}", response_model=AdminUserRead)
+@router.delete("/users/{user_id}", response_model=AdminUserRead, dependencies=[Depends(require_roles("admin"))])
 def deactivate_admin_user(
     user_id: str,
     db: Session = Depends(get_db),
@@ -377,7 +382,7 @@ def _guard_deactivation(user: AdminUser, current_admin: AdminUser, db: Session) 
         )
 
 
-@router.patch("/users/{user_id}", response_model=AdminUserUpdateResponse)
+@router.patch("/users/{user_id}", response_model=AdminUserUpdateResponse, dependencies=[Depends(require_roles("admin"))])
 def update_admin_user(
     user_id: str,
     payload: AdminUserUpdate,

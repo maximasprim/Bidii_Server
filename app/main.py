@@ -19,6 +19,7 @@ from app.routers import (
     admin_jobs,
     admin_loan_tiers,
     admin_news,
+    admin_role_permissions,
     careers,
     contact,
     jobs,
@@ -241,6 +242,7 @@ app.include_router(admin_ats_config.router)
 app.include_router(admin_ats_screening.router)
 app.include_router(admin_ats_vetting.router)
 app.include_router(admin_ai.router)
+app.include_router(admin_role_permissions.router)
 
 # Self-contained admin dashboard (login, stats, submissions) — a static
 # HTML/CSS/JS page with no build step, served at /admin/. It talks to the
