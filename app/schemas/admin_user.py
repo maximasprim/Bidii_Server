@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-AdminRole = Literal["admin", "loan_officer", "hr", "marketin_manager"]
+AdminRole = Literal["admin", "loan_officer", "hr", "marketing_manager"]
 
 class AdminUserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=100)

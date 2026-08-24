@@ -29,6 +29,7 @@ MENU_REGISTRY: list[tuple[str, str]] = [
     ("/admin/news", "News Articles"),
     ("/admin/jobs", "Job Listings"),
     ("/admin/loan-terms", "Products"),
+    ("/admin/branches", "Branches"),
     ("/admin/users", "Admin Users"),
     ("/admin/role-permissions", "Roles & Permissions"),
 ]

@@ -16,10 +16,12 @@ from app.routers import (
     admin_ats_screening,
     admin_ats_vetting,
     admin_auth,
+    admin_branches,
     admin_jobs,
     admin_loan_tiers,
     admin_news,
     admin_role_permissions,
+    branches,
     careers,
     contact,
     jobs,
@@ -172,6 +174,32 @@ def _bootstrap_loan_tiers() -> None:
 
 _bootstrap_loan_tiers()
 
+
+def _bootstrap_branches() -> None:
+    """
+    Same one-time migration pattern as _bootstrap_loan_tiers above, for
+    the `branches` table — seeds the original hardcoded branch list (that
+    used to live in src/data/content.ts on the frontend) only if the
+    table is completely empty. Once seeded, further changes go through
+    the admin Branches page, not this function or a restart.
+    """
+    from app.data.seed_branches import SEED_BRANCHES
+    from app.models.branch import Branch
+
+    db = SessionLocal()
+    try:
+        if db.query(Branch).first() is not None:
+            return
+        for branch_data in SEED_BRANCHES:
+            db.add(Branch(**branch_data))
+        db.commit()
+        logger.info("Seeded %d initial branches.", len(SEED_BRANCHES))
+    finally:
+        db.close()
+
+
+_bootstrap_branches()
+
 app = FastAPI(
     title=settings.app_name,
     description="Backend API for the Bidii Credit website (contact, loan applications, careers).",
@@ -243,6 +271,8 @@ app.include_router(admin_ats_screening.router)
 app.include_router(admin_ats_vetting.router)
 app.include_router(admin_ai.router)
 app.include_router(admin_role_permissions.router)
+app.include_router(branches.router)
+app.include_router(admin_branches.router)
 
 # Self-contained admin dashboard (login, stats, submissions) — a static
 # HTML/CSS/JS page with no build step, served at /admin/. It talks to the
