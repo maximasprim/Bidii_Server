@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,6 +16,7 @@ class JobOpeningCreate(BaseModel):
     responsibilities: list[str] = Field(default_factory=list, max_length=30)
     is_open: bool = True
     slug: str | None = Field(default=None, max_length=200)
+    application_deadline: date | None = None
 
 
 class JobOpeningUpdate(BaseModel):
@@ -28,6 +29,8 @@ class JobOpeningUpdate(BaseModel):
     responsibilities: list[str] = Field(default_factory=list, max_length=30)
     is_open: bool | None = None
     slug: str | None = Field(default=None, max_length=200)
+    application_deadline: date | None = None
+    clear_application_deadline: bool = False
 
 
 class JobOpeningRead(BaseModel):
@@ -43,6 +46,7 @@ class JobOpeningRead(BaseModel):
     requirements: list[str] = Field(default_factory=list)
     responsibilities: list[str] = Field(default_factory=list)
     is_open: bool
+    application_deadline: date | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -68,6 +68,8 @@ def _migrate_schema() -> None:
             statements.append("ALTER TABLE job_openings ADD COLUMN requirements JSON DEFAULT '[]'")
         if "responsibilities" not in columns:
             statements.append("ALTER TABLE job_openings ADD COLUMN responsibilities JSON DEFAULT '[]'")
+        if "application_deadline" not in columns:
+            statements.append("ALTER TABLE job_openings ADD COLUMN application_deadline DATE")
 
     if "news_articles" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("news_articles")}
