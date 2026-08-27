@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed frontend origins. Defaults cover the
     # Vite dev server and preview server ports used by the Bidii Credit
     # frontend during local development.
-    cors_origins: str = "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
+    cors_origins: str = "http://localhost:5173, https://www.bidiicreditkenya.co.ke, http://localhost:5174, http://127.0.0.1:5173, http://localhost:4173, http://127.0.0.1:4173"
 
     upload_dir: Path = BASE_DIR / "uploads"
     max_upload_size_mb: int = 5
