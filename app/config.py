@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     upload_dir: Path = BASE_DIR / "uploads"
     max_upload_size_mb: int = 5
 
+    # The live public frontend's canonical URL (no trailing slash) — used
+    # only by app/routers/sitemap.py to build absolute <loc> URLs. Override
+    # via .env if you ever point this backend at a staging frontend.
+    site_url: str = "https://www.bidiicreditkenya.co.ke"
+
+
     # Admin dashboard auth. Change these in production via .env — the
     # defaults here are only so the app runs out of the box in dev.
     admin_username: str = "admin"

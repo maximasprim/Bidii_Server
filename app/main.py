@@ -28,6 +28,7 @@ from app.routers import (
     loan_applications,
     loan_tiers,
     news,
+    sitemap,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -263,6 +264,7 @@ app.include_router(careers.router)
 app.include_router(admin_auth.router)
 app.include_router(admin.router)
 app.include_router(news.router)
+app.include_router(sitemap.router)
 app.include_router(admin_news.router)
 app.include_router(jobs.router)
 app.include_router(admin_jobs.router)
