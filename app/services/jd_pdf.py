@@ -36,7 +36,7 @@ from reportlab.platypus import (
 if TYPE_CHECKING:
     from app.models.job_opening import JobOpening
 
-LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "bidii_logo.png"
+LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "Bidii-logo.png"
 
 # Fixed company approvers on every generated JD, matching the existing
 # template this was modeled on. Edit here if the actual signatories change
@@ -114,7 +114,7 @@ def _header_footer(canvas, doc, job_title: str):
     canvas.setFont("Helvetica-Bold", 9)
     canvas.drawString(doc.leftMargin, doc.bottomMargin - 0.6 * cm, f"JD – {job_title}")
     canvas.setFont("Helvetica", 8)
-    canvas.drawCentredString(doc.pagesize[0] / 2, doc.bottomMargin - 0.6 * cm, "HR Document – JD - 2025")
+    canvas.drawCentredString(doc.pagesize[0] / 2, doc.bottomMargin - 0.6 * cm, "HR Document – JD - 2026")
     canvas.drawRightString(doc.pagesize[0] - doc.rightMargin, doc.bottomMargin - 0.6 * cm, str(canvas.getPageNumber()))
     canvas.restoreState()
 
