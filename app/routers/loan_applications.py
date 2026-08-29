@@ -13,6 +13,7 @@ from app.schemas.loan_application import (
 )
 from app.services.branch_assignment import assign_branch
 from app.services.internal_notifications import notify_branch_of_new_application
+from app.services.loan_application_duplicate_check import find_pending_duplicate
 from app.services.loan_application_presenter import to_loan_application_read
 
 logger = logging.getLogger("bidii.loan_applications")
@@ -68,6 +69,18 @@ def submit_loan_application(
             detail=(
                 f"Term for {tier.label} must be between {tier.min_term} and "
                 f"{tier.max_term} {tier.term_unit}, got {payload.term_value}"
+            ),
+        )
+
+    existing_pending = find_pending_duplicate(db, id_number=payload.id_number, full_name=payload.full_name)
+    if existing_pending is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "You already have a pending loan application with us "
+                f"({existing_pending.product_name}, submitted on "
+                f"{existing_pending.created_at.strftime('%d %b %Y')}). "
+                "Please wait for it to be processed before submitting a new one."
             ),
         )
 

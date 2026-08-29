@@ -114,7 +114,11 @@ def _header_footer(canvas, doc, job_title: str):
     canvas.setFont("Helvetica-Bold", 9)
     canvas.drawString(doc.leftMargin, doc.bottomMargin - 0.6 * cm, f"JD – {job_title}")
     canvas.setFont("Helvetica", 8)
-    canvas.drawCentredString(doc.pagesize[0] / 2, doc.bottomMargin - 0.6 * cm, "HR Document – JD - 2026")
+    canvas.drawCentredString(
+        doc.pagesize[0] / 2,
+        doc.bottomMargin - 0.6 * cm,
+        f"HR Document – JD - {date.today().year}",
+    )
     canvas.drawRightString(doc.pagesize[0] - doc.rightMargin, doc.bottomMargin - 0.6 * cm, str(canvas.getPageNumber()))
     canvas.restoreState()
 
