@@ -66,7 +66,7 @@ def send_notification(
 ) -> NotificationLog:
     """
     Renders and sends one email to `application.email`, then writes exactly
-    one NotificationLog row regardless of outcome. Never raises — a failed
+    one NotificationLog row regardless of outcome. Never raises - a failed
     or unconfigured send is recorded, not propagated, since a notification
     problem should never be mistaken for (or block) the caller's own work.
     """

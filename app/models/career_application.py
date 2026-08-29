@@ -21,7 +21,7 @@ class CareerApplication(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
-    # Nullable — "General application" has no specific posting. Kept as a
+    # Nullable - "General application" has no specific posting. Kept as a
     # loose reference (not enforced with ON DELETE CASCADE) since `role`
     # below is what actually gets displayed; if the posting is later edited
     # or removed, the application still shows what the applicant applied

@@ -1,6 +1,6 @@
 """
 OpenAI provider. Only this file (plus prompts.py, shared) knows anything
-about the OpenAI SDK — the `openai` package is imported nowhere else in the
+about the OpenAI SDK - the `openai` package is imported nowhere else in the
 codebase. Requires OPENAI_API_KEY in .env; see app/config.py.
 """
 
@@ -45,7 +45,7 @@ class OpenAIProvider(AIProvider):
 
     def _client(self, timeout_seconds: int):
         # Imported lazily so the `openai` package is only required if this
-        # provider is actually selected/used — installing it is optional
+        # provider is actually selected/used - installing it is optional
         # for anyone running the ATS in weighted-scoring-only mode.
         from openai import OpenAI
 

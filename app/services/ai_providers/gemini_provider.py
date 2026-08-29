@@ -1,6 +1,6 @@
 """
 Google Gemini provider. Only this file (plus prompts.py, shared) knows
-anything about the google-genai SDK — imported nowhere else in the
+anything about the google-genai SDK - imported nowhere else in the
 codebase. Requires GEMINI_API_KEY in .env; see app/config.py.
 """
 
@@ -45,7 +45,7 @@ class GeminiProvider(AIProvider):
 
     def _complete_json(self, *, system_prompt: str, user_prompt: str, model: str, timeout_seconds: int) -> str:
         # Imported lazily so google-genai is only required if this provider
-        # is actually selected/used — optional for weighted-scoring-only setups.
+        # is actually selected/used - optional for weighted-scoring-only setups.
         from google import genai
         from google.genai import errors as genai_errors
         from google.genai import types as genai_types

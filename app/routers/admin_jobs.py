@@ -127,11 +127,11 @@ def delete_job(job_id: str, db: Session = Depends(get_db)) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Formal Job Description document — see app/schemas/job_description.py for
+# Formal Job Description document - see app/schemas/job_description.py for
 # the JDContent shape and app/services/jd_pdf.py for how it's rendered.
 # AI generation lives in admin_ai.py (POST /api/admin/ai/jobs/{job_id}/jd/generate),
 # matching where every other "AI, outside of scoring one candidate" endpoint
-# lives — this file only owns saving the (admin-reviewed) content and
+# lives - this file only owns saving the (admin-reviewed) content and
 # rendering/downloading the PDF from whatever's currently saved.
 # ---------------------------------------------------------------------------
 
@@ -149,7 +149,7 @@ def save_job_description(job_id: str, payload: JDUpdateRequest, db: Session = De
     """
     Saves (admin-reviewed, possibly hand-edited) JD content for this job.
     Whether it came from the AI generator or was typed by hand makes no
-    difference here — either way it's saved through this one endpoint,
+    difference here - either way it's saved through this one endpoint,
     same as every other "AI draft becomes real data" flow in this app
     (see the module docstrings on app/services/ai_job_generation.py and
     app/services/ai_criteria_suggestion.py for the same pattern).
@@ -168,7 +168,7 @@ def save_job_description(job_id: str, payload: JDUpdateRequest, db: Session = De
 def download_job_description_pdf(job_id: str, db: Session = Depends(get_db)):
     """
     Renders the currently-saved jd_content into the fixed-format PDF and
-    returns it directly — nothing is written to disk or Supabase Storage;
+    returns it directly - nothing is written to disk or Supabase Storage;
     it's generated fresh into memory on every request, since rendering is
     cheap and this way the PDF can never go stale relative to the saved
     content.
@@ -179,7 +179,7 @@ def download_job_description_pdf(job_id: str, db: Session = Depends(get_db)):
     if not job.jd_content:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This job has no formal job description yet — generate or write one first.",
+            detail="This job has no formal job description yet - generate or write one first.",
         )
 
     import io

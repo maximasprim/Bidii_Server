@@ -6,7 +6,7 @@ AI-related admin endpoints that aren't specific to ATS screening:
 
 Kept separate from admin_ats_config.py / admin_ats_screening.py /
 admin_jobs.py so none of those files need to grow beyond their existing
-concern — this router is the only new surface for "AI, outside of scoring
+concern - this router is the only new surface for "AI, outside of scoring
 one candidate."
 """
 
@@ -48,7 +48,7 @@ def get_ai_provider_status() -> ATSAIProvidersResponse:
     Whether OpenAI/Gemini have server-side API keys configured, and each
     provider's default model. Powers the AI Evaluation provider picker in
     ATS Configuration and the model picker next to "Generate with AI" on
-    the Job Listings page — never exposes the keys themselves, only a
+    the Job Listings page - never exposes the keys themselves, only a
     configured: true/false boolean per provider.
     """
     return ATSAIProvidersResponse(
@@ -63,7 +63,7 @@ def generate_job_draft(
 ) -> AIJobGenerateResponse:
     """
     Generates a job posting draft (summary, description, responsibilities,
-    requirements) from a title alone. Returns the draft only — this never
+    requirements) from a title alone. Returns the draft only - this never
     writes to job_openings. The admin's existing "Create Job" form is
     populated with the result on the frontend, stays fully editable, and is
     saved/published through the existing POST /api/admin/jobs endpoint
@@ -101,7 +101,7 @@ def generate_ats_criteria(
     """
     Suggests a starter set of Weighted Scoring criteria from a job's own
     posted description/requirements/responsibilities. Returns the
-    suggestions only — nothing is written to ats_criteria here. The admin
+    suggestions only - nothing is written to ats_criteria here. The admin
     reviews/edits each one on the frontend and adds it through the existing
     POST /api/admin/ats/config/{config_id}/criteria endpoint, exactly as a
     manually-typed criterion would be.
@@ -156,7 +156,7 @@ def generate_formal_jd(
     Drafts the role-specific content of the formal, letterhead-style Job
     Description document for one job posting (see
     app/schemas/job_description.py and app/services/jd_pdf.py). Returns
-    the draft only — nothing is written to JobOpening.jd_content here; the
+    the draft only - nothing is written to JobOpening.jd_content here; the
     admin reviews/edits it on the frontend and saves it via
     PUT /api/admin/jobs/{job_id}/jd (see admin_jobs.py), exactly the same
     "AI drafts, human saves" pattern as every other AI generation endpoint
@@ -198,7 +198,7 @@ def generate_formal_jd(
 
 # Kept separate from admin_ats_config.py / admin_ats_screening.py /
 # admin_jobs.py so none of those files need to grow beyond their existing
-# concern — this router is the only new surface for "AI, outside of scoring
+# concern - this router is the only new surface for "AI, outside of scoring
 # one candidate."
 # """
 
@@ -238,7 +238,7 @@ def generate_formal_jd(
 #     Whether OpenAI/Gemini have server-side API keys configured, and each
 #     provider's default model. Powers the AI Evaluation provider picker in
 #     ATS Configuration and the model picker next to "Generate with AI" on
-#     the Job Listings page — never exposes the keys themselves, only a
+#     the Job Listings page - never exposes the keys themselves, only a
 #     configured: true/false boolean per provider.
 #     """
 #     return ATSAIProvidersResponse(
@@ -253,7 +253,7 @@ def generate_formal_jd(
 # ) -> AIJobGenerateResponse:
 #     """
 #     Generates a job posting draft (summary, description, responsibilities,
-#     requirements) from a title alone. Returns the draft only — this never
+#     requirements) from a title alone. Returns the draft only - this never
 #     writes to job_openings. The admin's existing "Create Job" form is
 #     populated with the result on the frontend, stays fully editable, and is
 #     saved/published through the existing POST /api/admin/jobs endpoint
@@ -291,7 +291,7 @@ def generate_formal_jd(
 #     """
 #     Suggests a starter set of Weighted Scoring criteria from a job's own
 #     posted description/requirements/responsibilities. Returns the
-#     suggestions only — nothing is written to ats_criteria here. The admin
+#     suggestions only - nothing is written to ats_criteria here. The admin
 #     reviews/edits each one on the frontend and adds it through the existing
 #     POST /api/admin/ats/config/{config_id}/criteria endpoint, exactly as a
 #     manually-typed criterion would be.

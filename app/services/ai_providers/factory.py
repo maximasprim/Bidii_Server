@@ -1,8 +1,8 @@
 """
 The only place in the codebase that turns a provider name string ("openai" /
 "gemini") into a live AIProvider instance, and the only place that reads AI
-API keys out of settings. Everything else — the ATS screening router, the
-job-generation router, the evaluation/generation orchestrators — calls
+API keys out of settings. Everything else - the ATS screening router, the
+job-generation router, the evaluation/generation orchestrators - calls
 `get_provider(name)` and never touches an SDK or an API key directly.
 """
 
@@ -51,7 +51,7 @@ def default_model_for(name: str) -> str:
 def provider_status() -> dict:
     """
     Whether each provider has a server-side API key configured, and its
-    default model — used by the admin UI to grey out a provider it can't
+    default model - used by the admin UI to grey out a provider it can't
     actually use yet, without ever exposing the key itself.
     """
     settings = get_settings()

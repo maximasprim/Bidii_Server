@@ -119,7 +119,7 @@ class ATSCriterionOutcome(BaseModel):
     """
     Shape of each entry in matched_criteria/missing_criteria for WEIGHTED
     mode. AI mode entries are shaped {label, detail} instead (see
-    AIRequirementOutcome) — both are stored as plain JSON, so
+    AIRequirementOutcome) - both are stored as plain JSON, so
     ATSScreeningResultRead types those fields as list[dict] and the
     frontend renders whichever shape is present (they always share
     "label"). This class exists for backend-side documentation/reference.
@@ -294,7 +294,7 @@ class AIJobDraftData(BaseModel):
 
 class AIJobGenerateResponse(BaseModel):
     success: bool = True
-    message: str = "Draft generated — review and edit before publishing."
+    message: str = "Draft generated - review and edit before publishing."
     data: AIJobDraftData
 
 
@@ -325,5 +325,5 @@ class AICriteriaSuggestionData(BaseModel):
 
 class AICriteriaGenerateResponse(BaseModel):
     success: bool = True
-    message: str = "Suggested criteria generated — review and edit before adding."
+    message: str = "Suggested criteria generated - review and edit before adding."
     data: AICriteriaSuggestionData

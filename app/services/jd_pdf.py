@@ -1,6 +1,6 @@
 """
 Renders a JobOpening + its jd_content (see app/schemas/job_description.py)
-into a PDF matching Bidii Credit's fixed formal Job Description layout —
+into a PDF matching Bidii Credit's fixed formal Job Description layout -
 the same layout as the company's existing "JD - Regional Manager" template
 (letterhead, info table, Key Responsibilities/%-of-Time/Performance-Criteria
 table, Other Responsibilities table, a fixed Essential-Knowledge box, a
@@ -10,8 +10,8 @@ Acceptance/Approvals signature block).
 Only the role-specific sections (role purpose, key responsibilities,
 qualifications, experience & skills, reports-to, and the "other
 responsibilities" lines) come from jd_content / the job record itself.
-Everything else — headings, table structure, the six behavioral
-competencies, and the signature block text — is fixed on purpose, so every
+Everything else - headings, table structure, the six behavioral
+competencies, and the signature block text - is fixed on purpose, so every
 generated JD keeps the same company format ("the JD format should exactly
 be the same, just tailored for the different roles").
 """
@@ -40,13 +40,13 @@ LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "Bidii-logo.png"
 
 # Fixed company approvers on every generated JD, matching the existing
 # template this was modeled on. Edit here if the actual signatories change
-# — there's nowhere else in the app that needs updating.
+# - there's nowhere else in the app that needs updating.
 APPROVER_1_NAME = "Harrison Mwai"
 APPROVER_1_TITLE = "General Manager - Commercial"
 APPROVER_2_NAME = "Rose Wachira"
 APPROVER_2_TITLE = "CEO"
 
-# Fixed company-wide behavioral competencies — identical on every JD,
+# Fixed company-wide behavioral competencies - identical on every JD,
 # regardless of role, matching the existing template exactly.
 BEHAVIORAL_COMPETENCIES = [
     (
@@ -90,11 +90,11 @@ _small = ParagraphStyle("JDSmall", parent=_body, fontSize=8, textColor=colors.gr
 
 
 def _bullets(items: list[str]) -> str:
-    return "<br/>".join(f"&#8226; {item}" for item in items) if items else "—"
+    return "<br/>".join(f"&#8226; {item}" for item in items) if items else "-"
 
 
 def _numbered(items: list[str]) -> str:
-    return "<br/>".join(f"{i}) {item}" for i, item in enumerate(items, start=1)) if items else "—"
+    return "<br/>".join(f"{i}) {item}" for i, item in enumerate(items, start=1)) if items else "-"
 
 
 def _header_footer(canvas, doc, job_title: str):
@@ -125,11 +125,11 @@ def _header_footer(canvas, doc, job_title: str):
 
 def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
     """
-    Writes the PDF to output_path — a filesystem path (str) or a
+    Writes the PDF to output_path - a filesystem path (str) or a
     file-like object (e.g. io.BytesIO), both of which reportlab's
     SimpleDocTemplate accepts directly. jd_content is the dict form of
     app.schemas.job_description.JDContent (already validated by the
-    caller — this function trusts its shape).
+    caller - this function trusts its shape).
     """
     doc = SimpleDocTemplate(
         output_path,
@@ -148,7 +148,7 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
 
     info_table = Table(
         [
-            ["Position Title:", job.title, "Reports To:", jd_content.get("reports_to") or "—"],
+            ["Position Title:", job.title, "Reports To:", jd_content.get("reports_to") or "-"],
             ["Branch", job.location, "Department", job.department],
             ["Grade", "", "Date", str(date.today().year)],
             [
@@ -211,15 +211,15 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
     other_rows = [
         [
             Paragraph("<b>Reporting Relationships:</b> Indicate the jobs that report to this position.", _body),
-            Paragraph(jd_content.get("reporting_relationships") or "—", _body),
+            Paragraph(jd_content.get("reporting_relationships") or "-", _body),
         ],
         [
             Paragraph("<b>Decision Making Mandates/Constraints:</b>", _body),
-            Paragraph(jd_content.get("decision_making_mandates") or "—", _body),
+            Paragraph(jd_content.get("decision_making_mandates") or "-", _body),
         ],
         [
             Paragraph("<b>Planning Responsibility:</b>", _body),
-            Paragraph(jd_content.get("planning_responsibility") or "—", _body),
+            Paragraph(jd_content.get("planning_responsibility") or "-", _body),
         ],
         [
             Paragraph(
@@ -227,7 +227,7 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
                 "with as part of this role:",
                 _body,
             ),
-            Paragraph(jd_content.get("relationship_management") or "—", _body),
+            Paragraph(jd_content.get("relationship_management") or "-", _body),
         ],
     ]
     other_table = Table(other_rows, colWidths=[9 * cm, 8 * cm])

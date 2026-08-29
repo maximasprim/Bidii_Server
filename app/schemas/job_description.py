@@ -12,11 +12,11 @@ class JDKeyResponsibility(BaseModel):
 
 class JDContent(BaseModel):
     """
-    The role-specific content of the formal Job Description document —
+    The role-specific content of the formal Job Description document -
     everything in the sample JD PDF EXCEPT the fixed header/letterhead,
     the info table (title/department/reports-to, which come from the
     JobOpening record itself), and the company-wide Performance and
-    Behavioral Competencies section (fixed text, not per-role — see
+    Behavioral Competencies section (fixed text, not per-role - see
     app/services/jd_pdf.py). Stored as JobOpening.jd_content once an
     admin has generated and/or edited it; used to render the PDF.
     """
@@ -39,7 +39,7 @@ class JDGenerateRequest(BaseModel):
 
 class JDGenerateResponse(BaseModel):
     success: bool = True
-    message: str = "Draft generated — review and edit before saving or exporting to PDF."
+    message: str = "Draft generated - review and edit before saving or exporting to PDF."
     data: JDContent
     provider: str
     model: str

@@ -1,5 +1,5 @@
 """
-The admin-facing "bell icon" inbox — every admin sees only their own
+The admin-facing "bell icon" inbox - every admin sees only their own
 InternalNotification rows. See app/models/internal_notification.py and
 app/services/internal_notifications.py for how these get created; this
 router is purely read + mark-read, nothing here creates a notification.

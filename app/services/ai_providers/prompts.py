@@ -3,7 +3,7 @@ Prompt text and response parsing shared by every AI provider.
 
 Kept out of the individual provider files so OpenAI and Gemini are always
 evaluating candidates / drafting jobs against the *identical* instructions
-and the *identical* validation rules — the only thing that differs between
+and the *identical* validation rules - the only thing that differs between
 providers is how the HTTP call itself is made and how JSON-mode is
 requested, both isolated inside their respective provider classes.
 """
@@ -34,13 +34,13 @@ VALID_CRITERION_CATEGORIES = {
 EVALUATION_SYSTEM_PROMPT = (
     "You are an impartial recruitment screening assistant for Bidii Credit, a Kenyan "
     "lending company. You evaluate a single job applicant against a single job posting "
-    "and return ONLY a JSON object matching the exact schema you're given — no prose, "
+    "and return ONLY a JSON object matching the exact schema you're given - no prose, "
     "no markdown fences, no commentary outside the JSON. You assist human recruiters; "
     "you never make a final hiring or rejection decision. Be fair, specific, and base "
-    "every judgement strictly on the job posting and the candidate material provided — "
+    "every judgement strictly on the job posting and the candidate material provided - "
     "never invent qualifications, experience, or details the candidate didn't state. "
     "The candidate's name is deliberately withheld from you and should play no role in "
-    "your evaluation — if a name, photo description, or other identity detail happens to "
+    "your evaluation - if a name, photo description, or other identity detail happens to "
     "appear inside the raw CV text, ignore it entirely and judge only the substance of "
     "their experience, skills, and qualifications."
 )
@@ -58,16 +58,16 @@ Return exactly this JSON shape:
 }
 Guidance:
 - "recommended" = strong fit on the job's core requirements.
-- "review" = partial fit, or fit is unclear from the material given — a human should look closer.
+- "review" = partial fit, or fit is unclear from the material given - a human should look closer.
 - "not_recommended" = clearly does not meet the job's core/mandatory requirements.
 - Base missing_requirements on what's actually absent from the candidate's cover note and CV text
-  (if provided) — do not penalise a candidate just because the CV text wasn't extractable.
+  (if provided) - do not penalise a candidate just because the CV text wasn't extractable.
 """
 
 # Used instead of EVALUATION_JSON_SCHEMA_HINT whenever the job has
 # configured weighted screening criteria (see ATSConfiguration.criteria).
 # The model is deliberately NOT asked for an overall score or
-# recommendation here — those are computed deterministically afterwards
+# recommendation here - those are computed deterministically afterwards
 # from each criterion's met/partial/not_met verdict and its configured
 # weight (see ats_scoring.bucket_recommendation, called from
 # app/routers/admin_ats_screening.py). That removes the failure mode
@@ -87,13 +87,13 @@ Return exactly this JSON shape:
 }
 Guidance:
 - Return EXACTLY one entry in criterion_results for every criterion listed below, using its exact
-  criterion_id — do not add, skip, merge, or invent criteria.
+  criterion_id - do not add, skip, merge, or invent criteria.
 - "met" = clearly satisfied by the candidate's cover note or CV text.
-- "partial" = some evidence, but incomplete, weak, or unclear — treat this the same as "not_met" for
+- "partial" = some evidence, but incomplete, weak, or unclear - treat this the same as "not_met" for
   scoring purposes, but say so explicitly in detail so a recruiter can judge for themselves.
 - "not_met" = no evidence found, or the candidate explicitly states they don't meet it.
 - Do not invent or credit a qualification the candidate didn't actually state.
-- Do NOT return an overall score_percentage or recommendation field — the system computes those
+- Do NOT return an overall score_percentage or recommendation field - the system computes those
   itself from your criterion_results and each criterion's configured weight.
 """
 
@@ -101,10 +101,10 @@ Guidance:
 def _criteria_block(criteria: list[dict]) -> str:
     lines = []
     for c in criteria:
-        required = " (MANDATORY — failing this alone should drive not_met/failing the candidate overall)" if c.get(
+        required = " (MANDATORY - failing this alone should drive not_met/failing the candidate overall)" if c.get(
             "is_required"
         ) else ""
-        description = f" — {c['description']}" if c.get("description") else ""
+        description = f" - {c['description']}" if c.get("description") else ""
         lines.append(f"- criterion_id={c['id']}: {c['label']}{required}{description}")
     return "\n".join(lines)
 
@@ -114,13 +114,13 @@ def build_evaluation_prompt(job_context: dict, candidate_context: dict, criteria
     cv_section = (
         f"CANDIDATE CV TEXT (extracted from their uploaded CV):\n{cv_text}\n"
         if cv_text
-        else "CANDIDATE CV TEXT: not available (couldn't be extracted) — evaluate using the cover note only, "
+        else "CANDIDATE CV TEXT: not available (couldn't be extracted) - evaluate using the cover note only, "
         "and don't treat this absence itself as a weakness.\n"
     )
     if criteria:
         criteria_section = (
             "\nSCREENING CRITERIA TO EVALUATE (assess the candidate against EACH of these individually "
-            f"— see the JSON shape below):\n{_criteria_block(criteria)}\n"
+            f"- see the JSON shape below):\n{_criteria_block(criteria)}\n"
         )
         schema_hint = CRITERIA_AWARE_JSON_SCHEMA_HINT
     else:
@@ -150,10 +150,10 @@ Cover note:
 JOB_GENERATION_SYSTEM_PROMPT = (
     "You are a recruitment copywriter for Bidii Credit, a Kenyan lending company with "
     "branches across the country. You draft a complete, realistic job posting from a job "
-    "title alone. Return ONLY a JSON object matching the exact schema you're given — no "
+    "title alone. Return ONLY a JSON object matching the exact schema you're given - no "
     "prose, no markdown fences, no commentary outside the JSON. Write in clear, "
     "professional English suitable for a Kenyan financial-services job board. This is a "
-    "DRAFT for a human recruiter to edit before publishing — it is never published "
+    "DRAFT for a human recruiter to edit before publishing - it is never published "
     "automatically, so it's fine (expected, even) for them to change details like exact "
     "location or department."
 )
@@ -169,7 +169,7 @@ Return exactly this JSON shape:
 Guidance:
 - responsibilities: 5-9 concrete, action-oriented bullet points.
 - requirements: 5-10 bullet points covering education, relevant experience, skills, and any
-  eligibility/work conditions (e.g. willingness to travel) as applicable to this role — mixed
+  eligibility/work conditions (e.g. willingness to travel) as applicable to this role - mixed
   together in one flat list, in the same natural style as a typical job board posting.
 """
 
@@ -183,11 +183,11 @@ def build_job_generation_prompt(title: str) -> str:
 CRITERIA_SUGGESTION_SYSTEM_PROMPT = (
     "You are a recruitment screening consultant for Bidii Credit, a Kenyan lending company. "
     "Given one job posting, you propose a starter set of screening criteria a recruiter can use "
-    "to weight-score applicants — these are keyword-matching rules, not free-text judgements, so "
+    "to weight-score applicants - these are keyword-matching rules, not free-text judgements, so "
     "every criterion needs concrete match_keywords a real applicant might actually write in a cover "
-    "note. Return ONLY a JSON object matching the exact schema you're given — no prose, no markdown "
+    "note. Return ONLY a JSON object matching the exact schema you're given - no prose, no markdown "
     "fences, no commentary outside the JSON. This is a DRAFT for a human recruiter to review, edit, "
-    "and selectively add before it affects any scoring — it is never applied automatically, so it's "
+    "and selectively add before it affects any scoring - it is never applied automatically, so it's "
     "fine (expected, even) for them to change labels, weights, or drop criteria that don't fit."
 )
 
@@ -206,17 +206,17 @@ Return exactly this JSON shape:
   ]
 }
 Guidance:
-- Propose 6-10 criteria in total, drawn from whichever categories actually apply to this job — don't
+- Propose 6-10 criteria in total, drawn from whichever categories actually apply to this job - don't
   force a criterion into a category it doesn't fit, and don't include "location" or "certification"
   unless the posting actually implies one.
 - match_keywords: 4-10 concrete lowercase words/phrases each. Matching is literal (no stemming or
   synonym expansion happens automatically), so include multiple realistic variants of how a real
-  applicant might phrase the same thing — different word forms (e.g. "manage", "managed",
+  applicant might phrase the same thing - different word forms (e.g. "manage", "managed",
   "management"), common synonyms (e.g. "credit analysis", "loan appraisal", "underwriting"), and
   both the spelled-out and abbreviated form where relevant (e.g. "certified public accountant",
   "cpa"). Avoid vague single words like "good" or "team".
 - is_required: true for at most 1-2 genuinely non-negotiable requirements (e.g. a specific degree or
-  license the posting states as mandatory) — most criteria should be false.
+  license the posting states as mandatory) - most criteria should be false.
 - weight: reflect relative importance across the set (e.g. core experience higher than a nice-to-have skill).
 """
 
@@ -346,7 +346,7 @@ def _parse_criteria_aware_evaluation(
     Builds matched_criteria/missing_criteria/failed_mandatory_criteria in
     the exact shape app/services/ats_scoring.py produces, and computes
     score_percentage purely from each criterion's configured weight and
-    the model's met/not_met verdict for it — the model's own opinion of
+    the model's met/not_met verdict for it - the model's own opinion of
     the overall score/recommendation is never requested or trusted (see
     CRITERIA_AWARE_JSON_SCHEMA_HINT). `criteria` is the source of truth
     for which criteria exist: any criterion_id the model didn't address
@@ -388,7 +388,7 @@ def _parse_criteria_aware_evaluation(
             }
             verdict = verdict_by_id.get(c["id"])
             if verdict is None:
-                outcome["detail"] = "AI response didn't address this criterion — treated as not met."
+                outcome["detail"] = "AI response didn't address this criterion - treated as not met."
                 met = False
             else:
                 outcome["detail"] = verdict["detail"]
@@ -455,11 +455,11 @@ FORMAL_JD_SYSTEM_PROMPT = (
     "You are an HR documentation specialist for Bidii Credit, a Kenyan lending company. You draft "
     "the content for the company's standard formal Job Description document for one specific job "
     "posting. The document's fixed layout, headings, and company-wide behavioral competencies are "
-    "handled by the system separately — you only draft the role-specific content requested in the "
-    "JSON schema below. Return ONLY a JSON object matching that schema — no prose, no markdown "
+    "handled by the system separately - you only draft the role-specific content requested in the "
+    "JSON schema below. Return ONLY a JSON object matching that schema - no prose, no markdown "
     "fences, no commentary outside the JSON. Write in clear, professional English matching the "
     "tone of a formal Kenyan corporate HR document. This is a DRAFT for a human recruiter to review "
-    "and edit before it's turned into a PDF — it is never issued automatically."
+    "and edit before it's turned into a PDF - it is never issued automatically."
 )
 
 FORMAL_JD_JSON_SCHEMA_HINT = """
@@ -490,7 +490,7 @@ Guidance:
   any required tools/software).
 - experience_and_skills: 4-6 items (soft skills, technical skills, track record expectations).
 - Base everything on the job's actual title, department, description, requirements, and
-  responsibilities given below — don't invent responsibilities unrelated to this specific role.
+  responsibilities given below - don't invent responsibilities unrelated to this specific role.
 """
 
 
@@ -561,7 +561,7 @@ BRANCH_MATCH_SYSTEM_PROMPT = (
     "Given a loan applicant's own description of where they are and a list of the company's active "
     "branches (each with an id and address), you pick the ONE branch that is geographically closest to "
     "the applicant, using your knowledge of Kenyan geography. Return ONLY a JSON object matching the "
-    "exact schema you're given — no prose, no markdown fences, no commentary outside the JSON."
+    "exact schema you're given - no prose, no markdown fences, no commentary outside the JSON."
 )
 
 BRANCH_MATCH_JSON_SCHEMA_HINT = """
@@ -576,7 +576,7 @@ whichever is nearest given your knowledge of Kenyan geography. Never invent a br
 
 
 def build_branch_match_prompt(location_text: str, branches: list[dict]) -> str:
-    branch_lines = "\n".join(f"- id={b['id']}: {b['name']} — {b['address']}" for b in branches)
+    branch_lines = "\n".join(f"- id={b['id']}: {b['name']} - {b['address']}" for b in branches)
     return f"""APPLICANT'S STATED LOCATION
 {location_text}
 

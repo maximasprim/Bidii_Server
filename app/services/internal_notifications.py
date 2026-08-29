@@ -27,17 +27,17 @@ def notify(db: Session, *, recipient_admin_id: str, message: str, link_path: str
 
 def notify_branch_of_new_application(db: Session, *, branch_id: str, branch_name: str, application) -> None:
     """
-    Fans out one notification per recipient: every regional_manager whose
-    managed_branch_ids includes this branch. If none are configured for
-    this branch yet, notifies every "admin"-role user instead, so a new
-    application is never silently invisible to everyone. Called from
+    Fans out one notification per recipient: every branch_office_admin
+    whose managed_branch_ids includes this branch. If none are configured
+    for this branch yet, notifies every "admin"-role user instead, so a
+    new application is never silently invisible to everyone. Called from
     app/routers/loan_applications.py right after a new application is
-    assigned a branch — never raises, since a notification failure must
+    assigned a branch - never raises, since a notification failure must
     never break the applicant's actual submission.
     """
     try:
-        regional_managers = db.query(AdminUser).filter(AdminUser.role == "regional_manager", AdminUser.is_active.is_(True)).all()
-        recipients = [rm for rm in regional_managers if rm.managed_branch_ids and branch_id in rm.managed_branch_ids]
+        branch_admins = db.query(AdminUser).filter(AdminUser.role == "branch_office_admin", AdminUser.is_active.is_(True)).all()
+        recipients = [ba for ba in branch_admins if ba.managed_branch_ids and branch_id in ba.managed_branch_ids]
 
         if not recipients:
             recipients = db.query(AdminUser).filter(AdminUser.role == "admin", AdminUser.is_active.is_(True)).all()

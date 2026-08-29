@@ -60,7 +60,7 @@ def _admin_usernames(db: Session, admin_ids: set[str]) -> dict[str, str]:
 def get_vetting_detail(application_id: str, db: Session = Depends(get_db)) -> ATSVettingDetail:
     """
     Full candidate vetting view: profile, job applied for, ATS score and
-    screening breakdown, recruiter notes, and the audit trail. Reads only —
+    screening breakdown, recruiter notes, and the audit trail. Reads only -
     an application with no screening yet returns screening: null and simply
     displays normally, same as the existing Career Applications table.
     """
@@ -119,7 +119,7 @@ def override_recommendation(
     Lets a recruiter/admin manually set the final recommendation for a
     candidate, independent of (and without erasing) the system's own
     score/recommendation. Requires the candidate to have been screened at
-    least once — override is a correction to a screening result, not a
+    least once - override is a correction to a screening result, not a
     substitute for running one.
     """
     _get_application_or_404(db, application_id)
@@ -269,7 +269,7 @@ def get_history(application_id: str, db: Session = Depends(get_db)) -> list[ATSA
 # def get_vetting_detail(application_id: str, db: Session = Depends(get_db)) -> ATSVettingDetail:
 #     """
 #     Full candidate vetting view: profile, job applied for, ATS score and
-#     screening breakdown, recruiter notes, and the audit trail. Reads only —
+#     screening breakdown, recruiter notes, and the audit trail. Reads only -
 #     an application with no screening yet returns screening: null and simply
 #     displays normally, same as the existing Career Applications table.
 #     """
@@ -328,7 +328,7 @@ def get_history(application_id: str, db: Session = Depends(get_db)) -> list[ATSA
 #     Lets a recruiter/admin manually set the final recommendation for a
 #     candidate, independent of (and without erasing) the system's own
 #     score/recommendation. Requires the candidate to have been screened at
-#     least once — override is a correction to a screening result, not a
+#     least once - override is a correction to a screening result, not a
 #     substitute for running one.
 #     """
 #     _get_application_or_404(db, application_id)

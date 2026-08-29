@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-AdminRole = Literal["admin", "loan_officer", "hr", "marketing_manager", "regional_manager"]
+AdminRole = Literal["admin", "loan_officer", "hr", "marketing_manager", "branch_office_admin"]
 
 class AdminUserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=100)
@@ -12,13 +12,13 @@ class AdminUserCreate(BaseModel):
     # Meaningful only for role="loan_officer" (their home branch) - ignored
     # for every other role.
     branch_id: str | None = None
-    # Meaningful only for role="regional_manager" (the branches they
+    # Meaningful only for role="branch_office_admin" (the branches they
     # oversee) - ignored for every other role.
     managed_branch_ids: list[str] | None = None
 
 
 class AdminUserUpdate(BaseModel):
-    """All fields optional — only what's provided gets changed."""
+    """All fields optional - only what's provided gets changed."""
 
     username: str | None = Field(default=None, min_length=3, max_length=100)
     password: str | None = Field(default=None, min_length=8, max_length=200)

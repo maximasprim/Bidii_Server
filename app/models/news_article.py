@@ -17,7 +17,7 @@ class NewsArticle(Base):
     title: Mapped[str] = mapped_column(String(300))
     category: Mapped[str] = mapped_column(String(60))
     excerpt: Mapped[str] = mapped_column(Text)
-    # List of paragraph strings — matches the frontend's Article.body: string[].
+    # List of paragraph strings - matches the frontend's Article.body: string[].
     body: Mapped[list] = mapped_column(JSON)
     image_urls: Mapped[list] = mapped_column(JSON, default=list)
     is_published: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -1,14 +1,14 @@
 """
 Single source of truth (server-side) for the dashboard's menu registry and
-each role's default access, plus resolving the *effective* permissions —
+each role's default access, plus resolving the *effective* permissions -
 DB overrides (RolePermission rows) layered over the defaults.
 
 This mirrors, and is meant to stay in sync with, the frontend's
-src/lib/roleAccess.ts DEFAULT_MENU_ACCESS/MENU_REGISTRY — if you add a
+src/lib/roleAccess.ts DEFAULT_MENU_ACCESS/MENU_REGISTRY - if you add a
 new dashboard page, add it to both. The frontend still ships these same
 defaults so the sidebar has something sensible to show before the
 GET /api/admin/role-permissions/mine request resolves, and if that
-request ever fails (offline, backend down) — it does NOT need them to
+request ever fails (offline, backend down) - it does NOT need them to
 match byte-for-byte, but a mismatch just means the UI briefly shows a
 slightly different menu set than what the backend will ultimately
 enforce for page access, until the fetch completes.
@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.services.auth import get_current_admin
 
-# (path, label) — path must match the routes registered in the frontend's
+# (path, label) - path must match the routes registered in the frontend's
 # App.tsx and the `to` values in AdminLayout's `tabs` list.
 MENU_REGISTRY: list[tuple[str, str]] = [
     ("/admin", "Overview"),
@@ -40,9 +40,9 @@ MENU_REGISTRY: list[tuple[str, str]] = [
 ]
 MENU_PATHS: set[str] = {path for path, _label in MENU_REGISTRY}
 
-# "admin" is deliberately absent — it always has every menu, is never
+# "admin" is deliberately absent - it always has every menu, is never
 # stored in the DB, and can't be edited via the settings endpoints below.
-CONFIGURABLE_ROLES = ["loan_officer", "hr", "marketing_manager", "regional_manager"]
+CONFIGURABLE_ROLES = ["loan_officer", "hr", "marketing_manager", "branch_office_admin"]
 ALL_ROLES = ["admin", *CONFIGURABLE_ROLES]
 
 # Same defaults as the frontend's DEFAULT_MENU_ACCESS in src/lib/roleAccess.ts.
@@ -50,7 +50,7 @@ DEFAULT_MENU_ACCESS: dict[str, list[str]] = {
     "loan_officer": ["/admin", "/admin/loan-applications", "/admin/loan-terms"],
     "hr": ["/admin", "/admin/career-applications", "/admin/ats", "/admin/jobs", "/admin/notifications"],
     "marketing_manager": ["/admin", "/admin/contacts", "/admin/news", "/admin/jobs"],
-    "regional_manager": ["/admin", "/admin/loan-applications", "/admin/loan-terms"],
+    "branch_office_admin": ["/admin", "/admin/loan-applications", "/admin/loan-terms"],
 }
 
 
@@ -75,7 +75,7 @@ def get_all_effective_permissions(db: Session) -> list[RoleMenus]:
 def get_effective_menus_for_role(db: Session, role: str) -> list[str]:
     """
     What one admin actually sees in their own sidebar right now. "admin"
-    always gets every menu, unconditionally — there's no DB row to check
+    always gets every menu, unconditionally - there's no DB row to check
     and no way to restrict it via this system, by design (prevents an
     admin from ever locking themselves, or every admin, out).
     """
@@ -92,17 +92,17 @@ def get_effective_menus_for_role(db: Session, role: str) -> list[str]:
 
 def require_menu_access(menu_path: str):
     """
-    FastAPI dependency factory — restricts a route to admins whose
+    FastAPI dependency factory - restricts a route to admins whose
     effective menu permissions (a DB override if one has been saved for
     their role, else DEFAULT_MENU_ACCESS above) include `menu_path`.
 
     Before this existed, menu permissions only controlled what the admin
-    *sidebar* showed — every ATS endpoint accepted any authenticated
+    *sidebar* showed - every ATS endpoint accepted any authenticated
     admin regardless of role, so a role with "/admin/ats" hidden from
     its sidebar (e.g. loan_officer, marketing_manager) could still call
     the ATS API directly and read candidate screening data. This closes
     that gap using the exact same effective-permissions data the
-    sidebar already resolves via GET /api/admin/role-permissions/mine —
+    sidebar already resolves via GET /api/admin/role-permissions/mine -
     nothing new to keep in sync, no separate list to maintain.
 
     "admin" always passes, same as get_effective_menus_for_role. A role

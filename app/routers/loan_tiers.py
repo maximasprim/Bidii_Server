@@ -26,12 +26,12 @@ def list_active_loan_tiers(
     product_slug: str | None = None, db: Session = Depends(get_db)
 ) -> LoanTierPublicListResponse:
     """
-    Powers the public Loan Calculator and Apply flow — the frontend groups
+    Powers the public Loan Calculator and Apply flow - the frontend groups
     this flat list by product_slug. Admin edits to rates/fees/bounds here
     take effect immediately, no frontend deploy needed.
 
     Returns only the fields the general public needs (amount/term bounds,
-    rate, tracking fee) — internal fee rates/amounts are left out here and
+    rate, tracking fee) - internal fee rates/amounts are left out here and
     only served via GET /api/loan-tiers/internal to logged-in admins/loan
     officers. See LoanTierPublicRead for the exact field list.
     """
@@ -49,7 +49,7 @@ def list_active_loan_tiers_internal(
 ) -> LoanTierListResponse:
     """
     Same active-tier set as the public endpoint above, but with every
-    field — including internal fee rates/amounts and guarantor counts.
+    field - including internal fee rates/amounts and guarantor counts.
     Restricted to logged-in admins and loan officers; the public Loan
     Calculator calls this in addition to the public endpoint when the
     visitor is signed in with one of those roles, to show the full
@@ -72,7 +72,7 @@ def list_active_loan_tiers_internal(
 # @router.get("", response_model=LoanTierListResponse)
 # def list_active_loan_tiers(product_slug: str | None = None, db: Session = Depends(get_db)) -> LoanTierListResponse:
 #     """
-#     Powers the public Loan Calculator and Apply flow — the frontend groups
+#     Powers the public Loan Calculator and Apply flow - the frontend groups
 #     this flat list by product_slug. Admin edits to rates/fees/bounds here
 #     take effect immediately, no frontend deploy needed.
 #     """

@@ -93,7 +93,7 @@ def create_job_configuration(
     """
     Creates (or replaces, if one already exists) the ATS configuration for a
     job posting, including its initial criteria list. Safe to call again
-    later — an existing configuration's criteria are replaced wholesale,
+    later - an existing configuration's criteria are replaced wholesale,
     same as JobOpeningUpdate treats requirements/responsibilities lists.
     """
     _get_job_or_404(db, job_id)
@@ -343,7 +343,7 @@ def delete_criterion(
 #     """
 #     Creates (or replaces, if one already exists) the ATS configuration for a
 #     job posting, including its initial criteria list. Safe to call again
-#     later — an existing configuration's criteria are replaced wholesale,
+#     later - an existing configuration's criteria are replaced wholesale,
 #     same as JobOpeningUpdate treats requirements/responsibilities lists.
 #     """
 #     _get_job_or_404(db, job_id)

@@ -50,7 +50,7 @@ def update_branch(branch_id: str, payload: BranchUpdate, db: Session = Depends(g
 @router.delete("/{branch_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_branch(branch_id: str, db: Session = Depends(get_db)) -> None:
     """
-    Hard delete — branches aren't referenced by any other record (unlike
+    Hard delete - branches aren't referenced by any other record (unlike
     loan tiers, which applications denormalize a copy of), so there's
     nothing else to keep consistent. Prefer setting is_active=False
     instead if the intent is to temporarily stop listing a branch while

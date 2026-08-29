@@ -1,12 +1,12 @@
 """
 ATS (Applicant Tracking System) models.
 
-Deliberately isolated from career_application.py / job_opening.py — this
+Deliberately isolated from career_application.py / job_opening.py - this
 module only ever *references* CareerApplication/JobOpening by foreign key,
 it never modifies those models. All tables here are brand new, so
 Base.metadata.create_all(bind=engine) in main.py creates them automatically
 on startup (see app/main.py's `_migrate_schema` docstring for why that's
-only true for new TABLES, not new columns on existing ones — not a concern
+only true for new TABLES, not new columns on existing ones - not a concern
 here since nothing below touches an existing table).
 
 Every application without an ATSScreeningResult row simply has no ATS data;
@@ -69,7 +69,7 @@ class ATSAIProviderName(str, enum.Enum):
 class ATSConfiguration(Base):
     """
     One screening configuration per job posting. Created on demand the
-    first time an admin opens a job's ATS Configuration tab — a job with
+    first time an admin opens a job's ATS Configuration tab - a job with
     no ATSConfiguration row simply has ATS screening turned off for it.
     """
 
@@ -94,7 +94,7 @@ class ATSConfiguration(Base):
     minimum_review_score: Mapped[float] = mapped_column(Float, default=40.0)
 
     # Which engine actually runs when this job is screened. Weighted
-    # scoring (ats_scoring.py) is untouched and remains the default — AI
+    # scoring (ats_scoring.py) is untouched and remains the default - AI
     # evaluation is strictly opt-in per job. See app/services/ats_ai_evaluation.py.
     evaluation_mode: Mapped[ATSEvaluationMode] = mapped_column(Enum(ATSEvaluationMode), default=ATSEvaluationMode.weighted)
     ai_provider: Mapped[ATSAIProviderName | None] = mapped_column(Enum(ATSAIProviderName), nullable=True)
@@ -128,7 +128,7 @@ class ATSCriterion(Base):
 
     # Keywords/phrases matched (case-insensitive substring) against an
     # application's cover note + resolved role to auto-evaluate this
-    # criterion. Kept simple and dependency-free — no CV text extraction —
+    # criterion. Kept simple and dependency-free - no CV text extraction -
     # so this stays isolated and easy to extend later.
     match_keywords: Mapped[list] = mapped_column(JSON, default=list)
 
@@ -146,7 +146,7 @@ class ATSScreeningResult(Base):
     """
     Latest screening outcome for one career application. Re-running
     screening overwrites this row (the history of *how* it changed lives in
-    ATSAuditLog, not here) — this table always reflects "what the system
+    ATSAuditLog, not here) - this table always reflects "what the system
     currently says about this candidate".
     """
 
@@ -163,8 +163,8 @@ class ATSScreeningResult(Base):
         Enum(ATSRecommendation), default=ATSRecommendation.review
     )
 
-    # Manual override by a recruiter/admin. When set, this — not
-    # system_recommendation — is what the vetting UI treats as the final
+    # Manual override by a recruiter/admin. When set, this - not
+    # system_recommendation - is what the vetting UI treats as the final
     # call, while system_recommendation is preserved for transparency.
     override_recommendation: Mapped[ATSRecommendation | None] = mapped_column(
         Enum(ATSRecommendation), nullable=True
@@ -190,7 +190,7 @@ class ATSScreeningResult(Base):
     )
 
     # --- AI evaluation fields (all null/empty in weighted mode) -----------
-    # Which engine actually produced this result — independent of the
+    # Which engine actually produced this result - independent of the
     # job's *current* ATSConfiguration.evaluation_mode, so a result stays
     # self-describing even if the config is switched after the fact.
     evaluation_method: Mapped[ATSEvaluationMode] = mapped_column(Enum(ATSEvaluationMode), default=ATSEvaluationMode.weighted)
@@ -200,7 +200,7 @@ class ATSScreeningResult(Base):
     ai_weaknesses: Mapped[list] = mapped_column(JSON, default=list)
     ai_explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Set when AI evaluation was attempted but failed and this result is a
-    # weighted-scoring fallback instead — see ATSAuditAction.ai_fallback_to_weighted.
+    # weighted-scoring fallback instead - see ATSAuditAction.ai_fallback_to_weighted.
     ai_fallback_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

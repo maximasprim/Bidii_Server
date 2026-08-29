@@ -73,7 +73,7 @@ def _run_weighted_screening(
     admin_id: str | None,
     manual_method_override: str | None = None,
 ) -> ATSScreeningResult:
-    """The weighted-scoring engine (app/services/ats_scoring.py) — now CV-aware, see that module's docstring."""
+    """The weighted-scoring engine (app/services/ats_scoring.py) - now CV-aware, see that module's docstring."""
     cv_text = extract_cv_text(application.cv_stored_filename) if application.cv_stored_filename else None
     outcome = score_application(application, config, cv_text=cv_text)
     result, previous_recommendation = _get_or_create_result(db, application.id)
@@ -95,7 +95,7 @@ def _run_weighted_screening(
     result.ai_weaknesses = []
     result.ai_explanation = None
     # Cleared here, then re-set by the AI-fallback caller right after this
-    # returns — so a genuine fallback still shows its banner, but a plain
+    # returns - so a genuine fallback still shows its banner, but a plain
     # weighted re-screen (including a manual override away from AI) doesn't
     # keep showing a stale "AI was unavailable" notice from a previous run.
     result.ai_fallback_reason = None
@@ -256,9 +256,9 @@ def _run_screening(
     mode: ATSEvaluationMode | None = None,
 ) -> ATSScreeningResult:
     """
-    Dispatches to AI or weighted evaluation. Uses `mode` if given — an
+    Dispatches to AI or weighted evaluation. Uses `mode` if given - an
     explicit one-off override so a candidate can be re-screened with the
-    *other* engine without changing the job's saved evaluation_mode — and
+    *other* engine without changing the job's saved evaluation_mode - and
     falls back to config.evaluation_mode when `mode` is None (the normal,
     non-override path). If AI evaluation is selected but fails for any
     reason (not configured, timeout, rate limit, invalid response, any
@@ -633,7 +633,7 @@ def get_ats_stats(job_id: str | None = None, db: Session = Depends(get_db)) -> A
 #     admin_id: str | None,
 #     manual_method_override: str | None = None,
 # ) -> ATSScreeningResult:
-#     """The weighted-scoring engine (app/services/ats_scoring.py) — now CV-aware, see that module's docstring."""
+#     """The weighted-scoring engine (app/services/ats_scoring.py) - now CV-aware, see that module's docstring."""
 #     cv_text = extract_cv_text(application.cv_stored_filename) if application.cv_stored_filename else None
 #     outcome = score_application(application, config, cv_text=cv_text)
 #     result, previous_recommendation = _get_or_create_result(db, application.id)
@@ -655,7 +655,7 @@ def get_ats_stats(job_id: str | None = None, db: Session = Depends(get_db)) -> A
 #     result.ai_weaknesses = []
 #     result.ai_explanation = None
 #     # Cleared here, then re-set by the AI-fallback caller right after this
-#     # returns — so a genuine fallback still shows its banner, but a plain
+#     # returns - so a genuine fallback still shows its banner, but a plain
 #     # weighted re-screen (including a manual override away from AI) doesn't
 #     # keep showing a stale "AI was unavailable" notice from a previous run.
 #     result.ai_fallback_reason = None
@@ -766,9 +766,9 @@ def get_ats_stats(job_id: str | None = None, db: Session = Depends(get_db)) -> A
 #     mode: ATSEvaluationMode | None = None,
 # ) -> ATSScreeningResult:
 #     """
-#     Dispatches to AI or weighted evaluation. Uses `mode` if given — an
+#     Dispatches to AI or weighted evaluation. Uses `mode` if given - an
 #     explicit one-off override so a candidate can be re-screened with the
-#     *other* engine without changing the job's saved evaluation_mode — and
+#     *other* engine without changing the job's saved evaluation_mode - and
 #     falls back to config.evaluation_mode when `mode` is None (the normal,
 #     non-override path). If AI evaluation is selected but fails for any
 #     reason (not configured, timeout, rate limit, invalid response, any

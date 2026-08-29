@@ -15,7 +15,7 @@ class LoanApplicationCreate(BaseModel):
 
     amount/term/product_slug/tier_id are re-validated in the router against
     the live, admin-editable LoanTier table (not here in the schema, since
-    that validation needs a DB session) — client-side slider constraints
+    that validation needs a DB session) - client-side slider constraints
     are a UX nicety, not a security boundary, so the backend checks
     independently regardless of what the frontend sent.
     """

@@ -14,7 +14,7 @@ def list_active_branches(db: Session = Depends(get_db)) -> BranchPublicListRespo
     Powers the public Branch Locator page and the homepage branches
     preview. This is the live, admin-editable replacement for the
     hardcoded `branches` array that used to live in
-    src/data/content.ts — admin add/edit/remove here takes effect
+    src/data/content.ts - admin add/edit/remove here takes effect
     immediately, no frontend deploy needed.
     """
     branches = db.query(Branch).filter(Branch.is_active.is_(True)).order_by(Branch.display_order).all()

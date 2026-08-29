@@ -13,7 +13,7 @@ class NewsArticleCreate(BaseModel):
     body: list[str] = Field(min_length=1)
     image_urls: list[str] = Field(default_factory=list, max_length=20)
     is_published: bool = True
-    # Optional — auto-generated from the title if not provided.
+    # Optional - auto-generated from the title if not provided.
     slug: str | None = Field(default=None, max_length=200)
 
 

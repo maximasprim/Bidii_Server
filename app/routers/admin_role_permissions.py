@@ -33,7 +33,7 @@ def get_my_permissions(
     db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)
 ) -> MyPermissionsResponse:
     """
-    Any logged-in admin can call this — it only ever describes their own
+    Any logged-in admin can call this - it only ever describes their own
     access, never another role's. Powers AdminLayout's sidebar filtering
     and route guard on every dashboard page load.
     """
@@ -44,7 +44,7 @@ def get_my_permissions(
 
 @router.get("", response_model=RolePermissionsResponse, dependencies=[Depends(require_roles("admin"))])
 def list_role_permissions(db: Session = Depends(get_db)) -> RolePermissionsResponse:
-    """Admin-only — powers the Roles & Permissions settings page's full grid."""
+    """Admin-only - powers the Roles & Permissions settings page's full grid."""
     permissions = get_all_effective_permissions(db)
     return RolePermissionsResponse(
         menus=[MenuItem(path=path, label=label) for path, label in MENU_REGISTRY],
@@ -60,7 +60,7 @@ def update_role_permissions(
     current_admin: AdminUser = Depends(get_current_admin),
 ) -> RolePermissionUpdateResponse:
     """
-    Admin-only. "admin" itself can't be edited here — it always has every
+    Admin-only. "admin" itself can't be edited here - it always has every
     menu, unconditionally, specifically so nobody (including by mistake)
     can lock every admin account out of the dashboard. Attempting to
     update it is rejected outright rather than silently ignored.
@@ -77,7 +77,7 @@ def update_role_permissions(
     if invalid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown menu path(s): {', '.join(invalid)}")
 
-    # Every role always keeps Overview — it's the landing page and the
+    # Every role always keeps Overview - it's the landing page and the
     # route guard's redirect target, so a role with zero menus (including
     # Overview) would have nowhere to land and effectively be locked out
     # of the dashboard entirely on their next login.

@@ -7,17 +7,17 @@ never left blank - per how this was scoped: an unmatched location still
 needs to go to *the closest* branch, not sit unassigned. Three-tier
 strategy, cheapest and most certain first:
 
-1. Direct match — the location text contains (or is contained in) a
+1. Direct match - the location text contains (or is contained in) a
    branch's name or address. Instant, free, and correct whenever an
    applicant types a town/area name that's an actual branch location.
-2. AI nearest-branch match — only when tier 1 finds nothing and an AI
+2. AI nearest-branch match - only when tier 1 finds nothing and an AI
    provider is configured. Gives the model the applicant's text and the
    real list of active branches (id + name + address) and asks it to pick
    the geographically closest one, using its general knowledge of Kenyan
    geography. The result is validated against the real branch id list
    before being trusted (see parse_branch_match_response) - the model
    cannot cause an assignment to a nonexistent branch.
-3. Fallback — if there's no AI provider configured, or the AI call fails
+3. Fallback - if there's no AI provider configured, or the AI call fails
    for any reason, assigns to the lowest-display_order active branch
    (effectively "head office" / the branch admins have ranked first).
    This tier never fails and never raises - see the try/except at the
@@ -81,12 +81,12 @@ def _direct_match(location_text: str, branches: list[Branch]) -> Branch | None:
 def assign_branch(db: Session, location_text: str) -> tuple[str | None, str | None]:
     """
     Returns (branch_id, method). branch_id is None only if there are
-    literally no active branches configured at all — everything else
+    literally no active branches configured at all - everything else
     always resolves to a real branch id.
     """
     branches = _active_branches(db)
     if not branches:
-        logger.warning("No active branches configured — can't assign a branch to a new loan application.")
+        logger.warning("No active branches configured - can't assign a branch to a new loan application.")
         return None, None
 
     direct = _direct_match(location_text, branches)

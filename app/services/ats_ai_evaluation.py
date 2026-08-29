@@ -1,6 +1,6 @@
 """
 Orchestrates a single AI-based candidate evaluation. This is the only
-module the ATS screening router talks to for AI evaluation — it doesn't
+module the ATS screening router talks to for AI evaluation - it doesn't
 know about OpenAI, Gemini, or CV text extraction directly, just this
 function's return value or the AIProviderError it might raise.
 """
@@ -31,7 +31,7 @@ def evaluate_candidate_with_ai(
     """
     Raises AIProviderNotConfiguredError / AIProviderTimeoutError /
     AIProviderRateLimitError / AIProviderInvalidResponseError / AIProviderError
-    (see app/services/ai_providers/base.py) — the caller (the screening
+    (see app/services/ai_providers/base.py) - the caller (the screening
     router) decides what to do on failure, typically falling back to
     weighted scoring. This function never falls back itself so that
     decision stays visible and testable in one place.
@@ -39,7 +39,7 @@ def evaluate_candidate_with_ai(
     When `config` has weighted criteria configured, those are passed
     through to the model so it evaluates the candidate against this job's
     actual configured criteria (with their weights and required flags)
-    instead of just the job posting's free-text description — see
+    instead of just the job posting's free-text description - see
     app/services/ai_providers/prompts.py for how this changes the prompt
     and response shape. A job with no configured criteria still gets a
     useful evaluation via the older free-text fallback (a single call,
@@ -50,8 +50,8 @@ def evaluate_candidate_with_ai(
     _reconcile_criteria_aware_runs below): an LLM's verdict on a
     borderline criterion isn't guaranteed to be the same from one call to
     the next even at a low temperature, and this evaluation can drive a
-    real score, a stored recommendation, and — if the job has auto-reject
-    enabled — an actual rejection. Silently trusting whichever run
+    real score, a stored recommendation, and - if the job has auto-reject
+    enabled - an actual rejection. Silently trusting whichever run
     happened to come back isn't good enough for that; requiring the two
     to agree turns an unnoticed coin-flip into a flagged, visible "needs
     human review" instead. This doubles the AI provider calls (and cost)
@@ -60,7 +60,7 @@ def evaluate_candidate_with_ai(
     """
     provider = get_provider(provider_name)  # raises AIProviderNotConfiguredError if no key
 
-    cv_text = extract_cv_text(application.cv_stored_filename)  # None on any failure — handled gracefully downstream
+    cv_text = extract_cv_text(application.cv_stored_filename)  # None on any failure - handled gracefully downstream
 
     job_context = {
         "title": job.title,
@@ -187,7 +187,7 @@ def _reconcile_criteria_aware_runs(
 
 # """
 # Orchestrates a single AI-based candidate evaluation. This is the only
-# module the ATS screening router talks to for AI evaluation — it doesn't
+# module the ATS screening router talks to for AI evaluation - it doesn't
 # know about OpenAI, Gemini, or CV text extraction directly, just this
 # function's return value or the AIProviderError it might raise.
 # """
@@ -212,14 +212,14 @@ def _reconcile_criteria_aware_runs(
 #     """
 #     Raises AIProviderNotConfiguredError / AIProviderTimeoutError /
 #     AIProviderRateLimitError / AIProviderInvalidResponseError / AIProviderError
-#     (see app/services/ai_providers/base.py) — the caller (the screening
+#     (see app/services/ai_providers/base.py) - the caller (the screening
 #     router) decides what to do on failure, typically falling back to
 #     weighted scoring. This function never falls back itself so that
 #     decision stays visible and testable in one place.
 #     """
 #     provider = get_provider(provider_name)  # raises AIProviderNotConfiguredError if no key
 
-#     cv_text = extract_cv_text(application.cv_stored_filename)  # None on any failure — handled gracefully downstream
+#     cv_text = extract_cv_text(application.cv_stored_filename)  # None on any failure - handled gracefully downstream
 
 #     job_context = {
 #         "title": job.title,

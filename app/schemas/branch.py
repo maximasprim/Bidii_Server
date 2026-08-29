@@ -42,11 +42,11 @@ class BranchRead(BaseModel):
 
 
 class BranchPublicRead(BaseModel):
-    """What the public Branch Locator / homepage preview gets — no
+    """What the public Branch Locator / homepage preview gets - no
     created_at/updated_at clutter, otherwise identical to BranchRead.
     There's no sensitive-data split here (unlike loan tiers' internal fee
-    fields) — branch address/hours/phone are public information by
-    nature — this is just a smaller, public-facing shape."""
+    fields) - branch address/hours/phone are public information by
+    nature - this is just a smaller, public-facing shape."""
 
     model_config = ConfigDict(from_attributes=True)
 

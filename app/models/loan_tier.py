@@ -19,13 +19,13 @@ PRODUCT_NAMES = {
 
 class LoanTier(Base):
     """
-    The editable "terms" for a loan product plan — rate, fees, amount/term
+    The editable "terms" for a loan product plan - rate, fees, amount/term
     bounds. This is the source of truth for both the public Loan Calculator
     and the loan application validator; admin edits here take effect
     everywhere immediately.
 
     Loan products themselves (name, marketing copy, FAQs) stay static on
-    the frontend — only the financial terms are database-backed.
+    the frontend - only the financial terms are database-backed.
     """
 
     __tablename__ = "loan_tiers"

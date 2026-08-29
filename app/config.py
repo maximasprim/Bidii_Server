@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     """
     Central app configuration. Values can be overridden via environment
-    variables or a .env file (see .env.example) without touching code —
+    variables or a .env file (see .env.example) without touching code -
     e.g. CORS_ORIGINS for a production frontend domain, DATABASE_URL to
     switch off SQLite.
     """
@@ -34,12 +34,12 @@ class Settings(BaseSettings):
     upload_dir: Path = BASE_DIR / "uploads"
     max_upload_size_mb: int = 5
 
-    # The live public frontend's canonical URL (no trailing slash) — used
+    # The live public frontend's canonical URL (no trailing slash) - used
     # only by app/routers/sitemap.py to build absolute <loc> URLs. Override
     # via .env if you ever point this backend at a staging frontend.
     site_url: str = "https://www.bidiicreditkenya.co.ke"
 
-    # Admin dashboard auth. Change these in production via .env — the
+    # Admin dashboard auth. Change these in production via .env - the
     # defaults here are only so the app runs out of the box in dev.
     admin_username: str = "admin"
     admin_password: str = "changeme123"
@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # --- AI ATS Evaluation / AI Job Generation ---------------------------
     # All optional. Weighted scoring (the original ATS) works with none of
     # these set. AI Evaluation only becomes usable once the relevant key is
-    # present here — see app/services/ai_providers/factory.py, the single
+    # present here - see app/services/ai_providers/factory.py, the single
     # place that reads these. Never sent to the frontend; only a per-provider
     # `configured: true/false` boolean is exposed via GET /api/admin/ai/providers.
     openai_api_key: str | None = None
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     # --- Outbound candidate email notifications --------------------------
     # All optional. When smtp_host is unset, the notification system skips
     # sending and logs a "skipped_not_configured" entry instead of raising
-    # — see app/services/email_sender.py. Never sent to the frontend.
+    # - see app/services/email_sender.py. Never sent to the frontend.
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None

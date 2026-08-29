@@ -32,7 +32,7 @@ def create_access_token(subject: str, role: str | None = None) -> str:
     """
     role is embedded in the signed payload purely so the frontend can read
     "who am I" (e.g. to decide whether to show internal loan-tier figures)
-    via a client-side decode, the same way it already reads `sub` — since
+    via a client-side decode, the same way it already reads `sub` - since
     the token is signed, the claim can't be tampered with client-side
     without invalidating the signature. Every server-side authorization
     check still re-reads the role from the DB (see require_roles below),
@@ -64,8 +64,8 @@ def get_current_admin(
     db: Session = Depends(get_db),
 ):
     """
-    FastAPI dependency — protects admin routes. Use as: Depends(get_current_admin).
-    Returns the current AdminUser ORM object (not just a username string) —
+    FastAPI dependency - protects admin routes. Use as: Depends(get_current_admin).
+    Returns the current AdminUser ORM object (not just a username string) -
     the JWT subject is the user's stable ID, not their username, precisely
     so that an admin renaming themselves doesn't invalidate their own
     still-valid token on their very next request.
@@ -96,7 +96,7 @@ def get_current_admin(
 
 def require_roles(*allowed_roles: str):
     """
-    FastAPI dependency factory — use as Depends(require_roles("admin", "loan_officer"))
+    FastAPI dependency factory - use as Depends(require_roles("admin", "loan_officer"))
     to restrict a route to specific AdminUser roles, on top of the normal
     get_current_admin authentication check. Always re-checks the role from
     the DB-backed user object (not from the JWT's role claim), so a role

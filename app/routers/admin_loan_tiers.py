@@ -83,7 +83,7 @@ def update_loan_tier(tier_id: str, payload: LoanTierUpdate, db: Session = Depend
 @router.delete("/{tier_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_loan_tier(tier_id: str, db: Session = Depends(get_db)) -> None:
     """
-    Hard delete is safe here — LoanApplication stores its own denormalized
+    Hard delete is safe here - LoanApplication stores its own denormalized
     copy of the tier's label/id/terms at submission time rather than a
     foreign key, so historical applications are unaffected. Prefer setting
     is_active=False instead if the intent is just to stop offering a tier

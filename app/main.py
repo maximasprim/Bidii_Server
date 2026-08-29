@@ -50,7 +50,7 @@ def _migrate_schema() -> None:
     admin_users, requirements/responsibilities on job_openings, image_urls
     on news_articles). Base.metadata.create_all above only creates missing
     TABLES, never missing COLUMNS on tables that already exist, so brand
-    new columns need this instead. Safe to run on every startup — each
+    new columns need this instead. Safe to run on every startup - each
     statement is skipped once its column is present. Swap for Alembic if
     this project needs more than the occasional additive column.
     """
@@ -60,6 +60,12 @@ def _migrate_schema() -> None:
     existing_tables = set(inspector.get_table_names())
     statements: list[str] = []
 
+    def _rows_exist(sql: str) -> bool:
+        """One-off read used only by guarded data-migrations below (as opposed to the
+        ALTER TABLE statements, which are guarded by column-existence instead)."""
+        with engine.connect() as check_conn:
+            return check_conn.execute(text(sql)).first() is not None
+
     if "admin_users" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("admin_users")}
         if "role" not in columns:
@@ -68,6 +74,27 @@ def _migrate_schema() -> None:
             statements.append("ALTER TABLE admin_users ADD COLUMN branch_id VARCHAR(36)")
         if "managed_branch_ids" not in columns:
             statements.append("ALTER TABLE admin_users ADD COLUMN managed_branch_ids JSON")
+        if "role" in columns and _rows_exist("SELECT 1 FROM admin_users WHERE role = 'regional_manager' LIMIT 1"):
+            statements.append("UPDATE admin_users SET role = 'branch_office_admin' WHERE role = 'regional_manager'")
+
+    if "role_permissions" in existing_tables:
+        # Same rename, applied to a saved menu-access override too - a
+        # customization saved under the old role name would otherwise
+        # become orphaned (referring to a role that no longer exists) and
+        # silently stop applying.
+        if _rows_exist("SELECT 1 FROM role_permissions WHERE role = 'regional_manager' LIMIT 1"):
+            statements.append("UPDATE role_permissions SET role = 'branch_office_admin' WHERE role = 'regional_manager'")
+
+    if "loan_applications" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("loan_applications")}
+        if "location" not in columns:
+            statements.append("ALTER TABLE loan_applications ADD COLUMN location VARCHAR(200)")
+        if "assigned_branch_id" not in columns:
+            statements.append("ALTER TABLE loan_applications ADD COLUMN assigned_branch_id VARCHAR(36)")
+        if "branch_assignment_method" not in columns:
+            statements.append("ALTER TABLE loan_applications ADD COLUMN branch_assignment_method VARCHAR(20)")
+        if "assigned_loan_officer_id" not in columns:
+            statements.append("ALTER TABLE loan_applications ADD COLUMN assigned_loan_officer_id VARCHAR(36)")
 
     if "loan_applications" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("loan_applications")}
@@ -96,7 +123,7 @@ def _migrate_schema() -> None:
         if "image_urls" not in columns:
             statements.append("ALTER TABLE news_articles ADD COLUMN image_urls JSON DEFAULT '[]'")
 
-    # AI ATS Evaluation columns — added after ats_configurations /
+    # AI ATS Evaluation columns - added after ats_configurations /
     # ats_screening_results already existed on some deployments. All
     # default to the weighted-scoring behavior (evaluation_mode='weighted',
     # everything AI-related NULL/empty), so this is a no-op for anyone not
@@ -142,7 +169,7 @@ _migrate_schema()
 def _bootstrap_first_admin() -> None:
     """
     Seeds one admin user from ADMIN_USERNAME/ADMIN_PASSWORD in .env, but
-    only if the admin_users table is completely empty — after the first
+    only if the admin_users table is completely empty - after the first
     admin exists, further admins are created from the dashboard itself
     (POST /api/admin/users), not by editing .env and restarting.
     """
@@ -163,7 +190,7 @@ def _bootstrap_first_admin() -> None:
             )
         )
         db.commit()
-        logger.info("Seeded first admin user %r from .env — change this password after logging in.", settings.admin_username)
+        logger.info("Seeded first admin user %r from .env - change this password after logging in.", settings.admin_username)
     finally:
         db.close()
 
@@ -174,7 +201,7 @@ _bootstrap_first_admin()
 def _bootstrap_loan_tiers() -> None:
     """
     Seeds the original static tier data into the loan_tiers table, but only
-    if that table is completely empty — this is a one-time migration from
+    if that table is completely empty - this is a one-time migration from
     "tiers hardcoded in Python" to "tiers configured by an admin," not a
     sync that runs on every startup. Once seeded, all further changes go
     through the admin Loan Terms page, not this function or a restart.
@@ -200,7 +227,7 @@ _bootstrap_loan_tiers()
 def _bootstrap_branches() -> None:
     """
     Same one-time migration pattern as _bootstrap_loan_tiers above, for
-    the `branches` table — seeds the original hardcoded branch list (that
+    the `branches` table - seeds the original hardcoded branch list (that
     used to live in src/data/content.ts on the frontend) only if the
     table is completely empty. Once seeded, further changes go through
     the admin Branches page, not this function or a restart.
@@ -240,7 +267,7 @@ app.add_middleware(
 def _sanitize_errors(errors: list[dict]) -> list[dict]:
     """
     Pydantic can embed the raw exception instance in an error's ctx.error
-    field (e.g. when a @model_validator raises ValueError) — that's not
+    field (e.g. when a @model_validator raises ValueError) - that's not
     JSON-serializable, so stringify it before this ever reaches json.dumps.
     """
     cleaned = []
@@ -299,7 +326,7 @@ app.include_router(admin_notifications.router)
 app.include_router(branches.router)
 app.include_router(admin_branches.router)
 
-# Self-contained admin dashboard (login, stats, submissions) — a static
+# Self-contained admin dashboard (login, stats, submissions) - a static
 # HTML/CSS/JS page with no build step, served at /admin/. It talks to the
 # /api/admin/* endpoints above using a bearer token from /api/admin/login.
 _STATIC_DIR = Path(__file__).resolve().parent / "static"

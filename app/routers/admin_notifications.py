@@ -109,7 +109,7 @@ def delete_template(template_id: str, db: Session = Depends(get_db)) -> None:
     if in_use is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"This template is wired to the '{in_use.trigger.value}' automation rule — "
+            detail=f"This template is wired to the '{in_use.trigger.value}' automation rule - "
             "turn that off or point it at a different template first.",
         )
 
@@ -118,7 +118,7 @@ def delete_template(template_id: str, db: Session = Depends(get_db)) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Automation rules — one row per real status, get-or-create on read (same
+# Automation rules - one row per real status, get-or-create on read (same
 # pattern app/routers/admin_ats_config.py already uses for ATSConfiguration).
 # ---------------------------------------------------------------------------
 

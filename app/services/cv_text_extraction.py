@@ -1,11 +1,11 @@
 """
-CV text extraction — shared by AI evaluation (app/services/ats_ai_evaluation.py)
+CV text extraction - shared by AI evaluation (app/services/ats_ai_evaluation.py)
 and weighted scoring (app/services/ats_scoring.py, called from the screening
 router). Both treat the CV as opt-in supporting text: it enriches the match,
 it's never required for either engine to run.
 
 Every failure here (download error, corrupt/unreadable PDF, empty result) is
-swallowed and returns None — a candidate whose CV can't be extracted still
+swallowed and returns None - a candidate whose CV can't be extracted still
 gets evaluated on their cover note; see the callers' handling of a missing
 cv_text. Nothing here ever raises.
 """

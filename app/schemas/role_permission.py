@@ -7,7 +7,7 @@ class MenuItem(BaseModel):
 
 
 class MyPermissionsResponse(BaseModel):
-    """What GET /api/admin/role-permissions/mine returns — any logged-in
+    """What GET /api/admin/role-permissions/mine returns - any logged-in
     admin can call this, it only ever describes their own access."""
 
     role: str
@@ -21,7 +21,7 @@ class RolePermissionRead(BaseModel):
 
 
 class RolePermissionsResponse(BaseModel):
-    """What GET /api/admin/role-permissions returns — admin-only, the
+    """What GET /api/admin/role-permissions returns - admin-only, the
     full settings-page view across every configurable role."""
 
     menus: list[MenuItem]

@@ -1,5 +1,5 @@
 """
-Serves a dynamically-generated sitemap.xml — replaces the old static file
+Serves a dynamically-generated sitemap.xml - replaces the old static file
 that lived at bidii-credit-main/public/sitemap.xml. That file went stale
 the moment News became a database-backed, admin-managed CMS: nothing kept
 its hardcoded article URLs in sync with what admins actually published.
@@ -17,7 +17,7 @@ the frontend's static data, not this backend:
 - PRODUCT_SLUGS: the loan products shown on /products and
   /products/<slug> - see bidii-credit-main/src/data/content.ts's
   `loanProducts` array. If a product is ever added, renamed, or removed
-  there, update the list below to match — this is now the ONLY other
+  there, update the list below to match - this is now the ONLY other
   place that needs updating (previously the static sitemap.xml also had
   to be hand-edited in parallel and the two drifted apart, which is
   exactly what caused the mismatch this replaces).
@@ -37,7 +37,7 @@ from app.models.news_article import NewsArticle
 
 router = APIRouter(tags=["sitemap"])
 
-# (path, changefreq, priority) — mirrors bidii-credit-main/src/App.tsx's
+# (path, changefreq, priority) - mirrors bidii-credit-main/src/App.tsx's
 # public routes. Keep in sync if a page is added/removed there.
 STATIC_ROUTES = [
     ("/", "weekly", "1.0"),

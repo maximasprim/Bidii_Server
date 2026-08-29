@@ -47,7 +47,7 @@ async def upload_article_image(image: UploadFile = File(...)) -> NewsImageUpload
     """
     Uploads one image for use in a news article's image_urls list. Returns
     a path (not a raw Supabase URL) that the frontend requests back through
-    GET /api/news/images/{filename} — this backend proxies image bytes the
+    GET /api/news/images/{filename} - this backend proxies image bytes the
     same way it already proxies career-application CV downloads, so this
     doesn't depend on the Supabase bucket being publicly readable.
     """

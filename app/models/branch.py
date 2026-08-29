@@ -11,7 +11,7 @@ class Branch(Base):
     """
     A physical Bidii Credit branch location. This is the live,
     admin-editable replacement for what used to be a hardcoded `branches`
-    array in src/data/content.ts — same fields, same shape, now backed by
+    array in src/data/content.ts - same fields, same shape, now backed by
     the database so admin edits (add/edit/remove a branch) show up on the
     site immediately without a redeploy.
     """

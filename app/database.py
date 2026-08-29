@@ -18,7 +18,7 @@ class Base(DeclarativeBase):
 
 
 def get_db() -> Generator:
-    """FastAPI dependency — yields a DB session and always closes it."""
+    """FastAPI dependency - yields a DB session and always closes it."""
     db = SessionLocal()
     try:
         yield db

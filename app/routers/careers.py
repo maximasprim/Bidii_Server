@@ -43,7 +43,7 @@ async def submit_career_application(
 ) -> CareerApplicationCreateResponse:
     """
     Receives a career application from the frontend's Careers page form
-    (multipart/form-data — this endpoint handles a file upload, unlike the
+    (multipart/form-data - this endpoint handles a file upload, unlike the
     contact/loan-application endpoints which are plain JSON).
 
     job_id links the application to a real JobOpening for the admin vetting
@@ -64,7 +64,7 @@ async def submit_career_application(
             raise HTTPException(status_code=422, detail="This job posting could not be found.")
         resolved_role = job.title
     elif role not in KNOWN_ROLES:
-        # Not rejected — job openings change more often than this list is
+        # Not rejected - job openings change more often than this list is
         # updated. Just logged so stale entries in KNOWN_ROLES get noticed.
         logger.info("Career application for a role not in KNOWN_ROLES: %r", role)
 

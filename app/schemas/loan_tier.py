@@ -85,12 +85,12 @@ class LoanTierRead(BaseModel):
 
 class LoanTierPublicRead(BaseModel):
     """
-    What the public Loan Calculator/Apply flow gets — enough to compute
+    What the public Loan Calculator/Apply flow gets - enough to compute
     and display the repayment schedule (amount/term bounds, rate, and the
     tracking fee, which is itself an editable public input on logbook
     products) without exposing internal fee rates/amounts (processing fee
     %, life insurance fee %, chattel/incharge fees, excise duty rate,
-    guarantor counts). Those stay restricted to admins and loan officers —
+    guarantor counts). Those stay restricted to admins and loan officers -
     see LoanTierRead / GET /api/loan-tiers/internal.
     """
 

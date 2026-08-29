@@ -1,6 +1,6 @@
 """
 Sends outbound emails via SMTP using only the Python standard library
-(smtplib + email.mime) — no new pip dependency needed for this feature.
+(smtplib + email.mime) - no new pip dependency needed for this feature.
 
 This is the only module in the codebase that knows how to actually send
 an email; app/services/notifications.py is the only caller, and it always
@@ -34,7 +34,7 @@ def send_email(*, to_email: str, subject: str, body_text: str) -> None:
     Raises EmailNotConfiguredError if SMTP isn't set up, or EmailError on
     any send failure. Callers that don't want a failed/unconfigured send
     to interrupt whatever else they're doing (e.g. an application status
-    update) should catch these — see app/services/notifications.py, which
+    update) should catch these - see app/services/notifications.py, which
     is the only intended caller and already does this.
     """
     settings = get_settings()

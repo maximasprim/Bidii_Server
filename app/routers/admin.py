@@ -164,9 +164,9 @@ def list_loan_applications(
     """
     What a role sees here differs, since this same page/endpoint serves
     three different jobs (see app/services/role_permissions.py's comment
-    on the "regional_manager" menu entry):
+    on the "branch_office_admin" menu entry):
     - admin: every application, unrestricted - unchanged from before.
-    - regional_manager: only applications routed to one of their
+    - branch_office_admin: only applications routed to one of their
       managed_branch_ids - their inbox to triage and assign to officers.
     - loan_officer: only applications already assigned specifically to
       them - this is a real, intentional behavior change from before,
@@ -176,7 +176,7 @@ def list_loan_applications(
     gate above, but defaults matter) sees nothing, not everything.
     """
     query = db.query(LoanApplication)
-    if current_admin.role == "regional_manager":
+    if current_admin.role == "branch_office_admin":
         query = query.filter(LoanApplication.assigned_branch_id.in_(current_admin.managed_branch_ids or []))
     elif current_admin.role == "loan_officer":
         query = query.filter(LoanApplication.assigned_loan_officer_id == current_admin.id)
@@ -204,7 +204,7 @@ def _assert_can_touch_application(record: LoanApplication, current_admin: AdminU
     """Shared guard for the status-update and assign endpoints below."""
     if current_admin.role == "admin":
         return
-    if current_admin.role == "regional_manager":
+    if current_admin.role == "branch_office_admin":
         if record.assigned_branch_id and record.assigned_branch_id in (current_admin.managed_branch_ids or []):
             return
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This application isn't in one of your managed branches.")
@@ -257,10 +257,10 @@ def assign_loan_application(
 ) -> LoanApplicationRead:
     """
     Reassigns a loan application's branch and/or hands it to a specific
-    loan officer. Only admin and regional_manager can call this -
+    loan officer. Only admin and branch_office_admin can call this -
     loan_officer accounts receive assignments, they don't make them.
     """
-    if current_admin.role not in ("admin", "regional_manager"):
+    if current_admin.role not in ("admin", "branch_office_admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted.")
 
     record = db.query(LoanApplication).filter(LoanApplication.id == application_id).first()
@@ -272,7 +272,7 @@ def assign_loan_application(
         branch = db.query(Branch).filter(Branch.id == payload.assigned_branch_id).first()
         if branch is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="branch_id doesn't match a real branch.")
-        if current_admin.role == "regional_manager" and branch.id not in (current_admin.managed_branch_ids or []):
+        if current_admin.role == "branch_office_admin" and branch.id not in (current_admin.managed_branch_ids or []):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't manage that branch.")
         record.assigned_branch_id = branch.id
         record.branch_assignment_method = "manual"
@@ -310,10 +310,10 @@ def list_branch_loan_officers(
     db: Session = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin),
 ) -> list[AdminUserRead]:
-    """Loan officers based at one branch — populates the assignment dropdown for that branch."""
-    if current_admin.role == "regional_manager" and branch_id not in (current_admin.managed_branch_ids or []):
+    """Loan officers based at one branch - populates the assignment dropdown for that branch."""
+    if current_admin.role == "branch_office_admin" and branch_id not in (current_admin.managed_branch_ids or []):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't manage that branch.")
-    if current_admin.role not in ("admin", "regional_manager"):
+    if current_admin.role not in ("admin", "branch_office_admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted.")
 
     officers = (
@@ -438,7 +438,7 @@ def download_career_application_cv(
 
 
 # ---------------------------------------------------------------------------
-# Admin user management — lets a logged-in admin create additional admin
+# Admin user management - lets a logged-in admin create additional admin
 # accounts from the dashboard, instead of every admin sharing one set of
 # env-var credentials.
 # ---------------------------------------------------------------------------
@@ -523,7 +523,7 @@ def _guard_deactivation(user: AdminUser, current_admin: AdminUser, db: Session) 
     Shared by DELETE /users/{id} and PATCH /users/{id} (when it sets
     is_active=False) so both paths enforce the same lockout prevention:
     you can't deactivate yourself, and the last remaining active admin
-    can't be deactivated by anyone. Compares by ID, not username — usernames
+    can't be deactivated by anyone. Compares by ID, not username - usernames
     can change, IDs don't.
     """
     if user.id == current_admin.id:
@@ -562,7 +562,7 @@ def update_admin_user(
                 detail=f'An admin with username "{payload.username}" already exists.',
             )
         user.username = payload.username
-        # No session-invalidation workaround needed here — the JWT subject
+        # No session-invalidation workaround needed here - the JWT subject
         # is current_admin.id, which doesn't change when a username does.
 
     if payload.password is not None:
@@ -895,7 +895,7 @@ def update_admin_user(
 
 
 # # ---------------------------------------------------------------------------
-# # Admin user management — lets a logged-in admin create additional admin
+# # Admin user management - lets a logged-in admin create additional admin
 # # accounts from the dashboard, instead of every admin sharing one set of
 # # env-var credentials.
 # # ---------------------------------------------------------------------------
@@ -959,7 +959,7 @@ def update_admin_user(
 #     Shared by DELETE /users/{id} and PATCH /users/{id} (when it sets
 #     is_active=False) so both paths enforce the same lockout prevention:
 #     you can't deactivate yourself, and the last remaining active admin
-#     can't be deactivated by anyone. Compares by ID, not username — usernames
+#     can't be deactivated by anyone. Compares by ID, not username - usernames
 #     can change, IDs don't.
 #     """
 #     if user.id == current_admin.id:
@@ -998,7 +998,7 @@ def update_admin_user(
 #                 detail=f'An admin with username "{payload.username}" already exists.',
 #             )
 #         user.username = payload.username
-#         # No session-invalidation workaround needed here — the JWT subject
+#         # No session-invalidation workaround needed here - the JWT subject
 #         # is current_admin.id, which doesn't change when a username does.
 
 #     if payload.password is not None:

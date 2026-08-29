@@ -44,7 +44,7 @@ def get_article_image(path: str):
     Publicly proxies an image previously uploaded via
     POST /api/admin/news/upload-image (path is the value stored in an
     article's image_urls, e.g. "news/<uuid>_cover.jpg"). Proxying through
-    the backend — rather than linking straight to Supabase Storage — means
+    the backend - rather than linking straight to Supabase Storage - means
     news images work regardless of the storage bucket's public-read
     setting, the same pattern already used for career-application CV
     downloads.

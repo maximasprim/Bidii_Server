@@ -19,14 +19,14 @@ router = APIRouter(prefix="/api/admin", tags=["admin-auth"])
 def admin_login(payload: AdminLoginRequest, db: Session = Depends(get_db)) -> AdminLoginResponse:
     """
     DB-backed admin login. The first admin user is seeded automatically on
-    startup from ADMIN_USERNAME/ADMIN_PASSWORD in .env (see main.py) — after
+    startup from ADMIN_USERNAME/ADMIN_PASSWORD in .env (see main.py) - after
     that, additional admins are created from the dashboard itself
     (POST /api/admin/users), not through environment variables.
     """
     user = db.query(AdminUser).filter(AdminUser.username == payload.username).first()
 
     # Always run verify_password, even when no user was found, using a dummy
-    # hash — otherwise a "no such user" response returns faster than a
+    # hash - otherwise a "no such user" response returns faster than a
     # "wrong password" response, letting an attacker enumerate usernames by
     # timing alone.
     password_hash = user.password_hash if user else "$2b$12$" + "0" * 53
