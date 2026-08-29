@@ -4,13 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.branch import Branch
 from app.models.loan_application import LoanApplication
 from app.models.loan_tier import PRODUCT_NAMES, LoanTier
 from app.schemas.loan_application import (
     LoanApplicationCreate,
     LoanApplicationCreateResponse,
-    LoanApplicationRead,
 )
+from app.services.branch_assignment import assign_branch
+from app.services.internal_notifications import notify_branch_of_new_application
+from app.services.loan_application_presenter import to_loan_application_read
 
 logger = logging.getLogger("bidii.loan_applications")
 
@@ -82,13 +85,23 @@ def submit_loan_application(
         phone=payload.phone,
         email=payload.email,
         monthly_income=payload.monthly_income,
+        location=payload.location,
     )
+
+    # Every application always gets routed to some real, active branch -
+    # see app/services/branch_assignment.py for the exact/AI/fallback
+    # strategy. This never raises: a branch-matching problem must never
+    # block an applicant's submission from going through.
+    branch_id, method = assign_branch(db, payload.location)
+    record.assigned_branch_id = branch_id
+    record.branch_assignment_method = method
+
     db.add(record)
     db.commit()
     db.refresh(record)
 
     logger.info(
-        "New loan application from %s <%s> for %s (%s), amount=%.0f term=%s %s",
+        "New loan application from %s <%s> for %s (%s), amount=%.0f term=%s %s, location=%r -> branch=%r (%s)",
         record.full_name,
         record.email,
         record.product_name,
@@ -96,6 +109,15 @@ def submit_loan_application(
         record.amount,
         record.term_value,
         record.term_unit,
+        record.location,
+        record.assigned_branch_id,
+        record.branch_assignment_method,
     )
 
-    return LoanApplicationCreateResponse(data=LoanApplicationRead.model_validate(record))
+    if record.assigned_branch_id:
+        branch = db.query(Branch).filter(Branch.id == record.assigned_branch_id).first()
+        if branch:
+            # Never raises - see the function's own docstring.
+            notify_branch_of_new_application(db, branch_id=branch.id, branch_name=branch.name, application=record)
+
+    return LoanApplicationCreateResponse(data=to_loan_application_read(db, record))

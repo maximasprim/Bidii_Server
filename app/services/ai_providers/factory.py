@@ -65,3 +65,21 @@ def provider_status() -> dict:
             "default_model": settings.gemini_default_model,
         },
     }
+
+
+def first_configured_provider() -> str | None:
+    """
+    For server-triggered AI calls with no admin picking a provider in the
+    UI (e.g. app/services/branch_assignment.py's nearest-branch fallback,
+    run automatically on every public loan application submission) - picks
+    whichever provider actually has a key configured, preferring Gemini
+    since it's the cheaper/faster default for this kind of low-stakes
+    classification task. Returns None if neither is configured, so callers
+    can fall back to non-AI behavior instead of raising.
+    """
+    status = provider_status()
+    if status["gemini"]["configured"]:
+        return "gemini"
+    if status["openai"]["configured"]:
+        return "openai"
+    return None

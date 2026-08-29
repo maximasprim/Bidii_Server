@@ -16,7 +16,11 @@ enforce for page access, until the fetch completes.
 
 from dataclasses import dataclass
 
+from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.services.auth import get_current_admin
 
 # (path, label) — path must match the routes registered in the frontend's
 # App.tsx and the `to` values in AdminLayout's `tabs` list.
@@ -28,6 +32,7 @@ MENU_REGISTRY: list[tuple[str, str]] = [
     ("/admin/ats", "Candidate Screening"),
     ("/admin/news", "News Articles"),
     ("/admin/jobs", "Job Listings"),
+    ("/admin/notifications", "Candidate Notifications"),
     ("/admin/loan-terms", "Products"),
     ("/admin/branches", "Branches"),
     ("/admin/users", "Admin Users"),
@@ -37,14 +42,15 @@ MENU_PATHS: set[str] = {path for path, _label in MENU_REGISTRY}
 
 # "admin" is deliberately absent — it always has every menu, is never
 # stored in the DB, and can't be edited via the settings endpoints below.
-CONFIGURABLE_ROLES = ["loan_officer", "hr", "marketing_manager"]
+CONFIGURABLE_ROLES = ["loan_officer", "hr", "marketing_manager", "regional_manager"]
 ALL_ROLES = ["admin", *CONFIGURABLE_ROLES]
 
 # Same defaults as the frontend's DEFAULT_MENU_ACCESS in src/lib/roleAccess.ts.
 DEFAULT_MENU_ACCESS: dict[str, list[str]] = {
     "loan_officer": ["/admin", "/admin/loan-applications", "/admin/loan-terms"],
-    "hr": ["/admin", "/admin/career-applications", "/admin/ats", "/admin/jobs"],
+    "hr": ["/admin", "/admin/career-applications", "/admin/ats", "/admin/jobs", "/admin/notifications"],
     "marketing_manager": ["/admin", "/admin/contacts", "/admin/news", "/admin/jobs"],
+    "regional_manager": ["/admin", "/admin/loan-applications", "/admin/loan-terms"],
 }
 
 
@@ -82,3 +88,36 @@ def get_effective_menus_for_role(db: Session, role: str) -> list[str]:
     if row is not None:
         return row.allowed_menus
     return DEFAULT_MENU_ACCESS.get(role, [])
+
+
+def require_menu_access(menu_path: str):
+    """
+    FastAPI dependency factory — restricts a route to admins whose
+    effective menu permissions (a DB override if one has been saved for
+    their role, else DEFAULT_MENU_ACCESS above) include `menu_path`.
+
+    Before this existed, menu permissions only controlled what the admin
+    *sidebar* showed — every ATS endpoint accepted any authenticated
+    admin regardless of role, so a role with "/admin/ats" hidden from
+    its sidebar (e.g. loan_officer, marketing_manager) could still call
+    the ATS API directly and read candidate screening data. This closes
+    that gap using the exact same effective-permissions data the
+    sidebar already resolves via GET /api/admin/role-permissions/mine —
+    nothing new to keep in sync, no separate list to maintain.
+
+    "admin" always passes, same as get_effective_menus_for_role. A role
+    change (or a saved RolePermission override) takes effect on an
+    admin's very next request, since this re-reads the DB every time
+    rather than trusting anything cached in the JWT.
+    """
+
+    def dependency(current_admin=Depends(get_current_admin), db: Session = Depends(get_db)):
+        if menu_path not in get_effective_menus_for_role(db, current_admin.role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your role doesn't have access to this section.",
+            )
+        return current_admin
+
+    return dependency
+

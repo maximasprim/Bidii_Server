@@ -21,6 +21,7 @@ class JobOpening(Base):
     responsibilities: Mapped[list] = mapped_column(JSON, default=list)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True)
     application_deadline: Mapped[date | None] = mapped_column(Date, nullable=True, default=None)
+    jd_content: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

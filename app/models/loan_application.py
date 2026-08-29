@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, Float, Integer, String
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -35,6 +35,25 @@ class LoanApplication(Base):
     phone: Mapped[str] = mapped_column(String(40))
     email: Mapped[str] = mapped_column(String(320), index=True)
     monthly_income: Mapped[str] = mapped_column(String(100))
+    # Free-text location the applicant typed (e.g. a town, estate, or
+    # neighborhood) - not validated against real places, since applicants
+    # phrase locations in all sorts of ways. Nullable only so existing rows
+    # from before this column existed don't break; every new submission is
+    # required to include one (enforced in the Create schema, not here).
+    location: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+
+    # Which branch this application is routed to, and how that was decided
+    # - see app/services/branch_assignment.py. Every application always
+    # ends up assigned to some real, active branch (never left blank) -
+    # branch_assignment_method records whether that was a confident direct
+    # match, an AI-assisted nearest-branch guess, or the last-resort
+    # default, so admins can tell at a glance which assignments are worth
+    # double-checking.
+    assigned_branch_id: Mapped[str | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
+    branch_assignment_method: Mapped[str | None] = mapped_column(String(20), nullable=True)  # "exact"|"ai"|"fallback"
+    # Set by a regional manager (or admin) assigning the application to a
+    # specific loan officer within the assigned branch - null until then.
+    assigned_loan_officer_id: Mapped[str | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
 
     status: Mapped[LoanApplicationStatus] = mapped_column(
         Enum(LoanApplicationStatus), default=LoanApplicationStatus.pending

@@ -31,6 +31,13 @@ class StatusUpdate(BaseModel):
     status: str
 
 
+class LoanApplicationAssignRequest(BaseModel):
+    """Both fields optional — supply one, the other, or both in one call."""
+
+    assigned_branch_id: str | None = None
+    assigned_loan_officer_id: str | None = None
+    
+
 class ProductBreakdown(BaseModel):
     product_slug: str
     product_name: str

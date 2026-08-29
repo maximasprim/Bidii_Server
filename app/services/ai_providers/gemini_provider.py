@@ -5,8 +5,10 @@ codebase. Requires GEMINI_API_KEY in .env; see app/config.py.
 """
 
 from app.services.ai_providers.base import (
+    AIBranchMatch,
     AICriteriaSuggestion,
     AIEvaluationResult,
+    AIFormalJDDraft,
     AIJobDraft,
     AIProvider,
     AIProviderError,
@@ -15,14 +17,20 @@ from app.services.ai_providers.base import (
     AIProviderTimeoutError,
 )
 from app.services.ai_providers.prompts import (
+    BRANCH_MATCH_SYSTEM_PROMPT,
     CRITERIA_SUGGESTION_SYSTEM_PROMPT,
     EVALUATION_SYSTEM_PROMPT,
+    FORMAL_JD_SYSTEM_PROMPT,
     JOB_GENERATION_SYSTEM_PROMPT,
+    build_branch_match_prompt,
     build_criteria_suggestion_prompt,
     build_evaluation_prompt,
+    build_formal_jd_prompt,
     build_job_generation_prompt,
+    parse_branch_match_response,
     parse_criteria_suggestion_response,
     parse_evaluation_response,
+    parse_formal_jd_response,
     parse_job_draft_response,
 )
 
@@ -74,13 +82,17 @@ class GeminiProvider(AIProvider):
             raise AIProviderInvalidResponseError("Gemini returned an empty response body.")
         return text
 
-    def evaluate_candidate(self, *, job_context, candidate_context, model, timeout_seconds) -> AIEvaluationResult:
-        prompt = build_evaluation_prompt(job_context, candidate_context)
+    def evaluate_candidate(self, *, job_context, candidate_context, model, timeout_seconds, criteria=None) -> AIEvaluationResult:
+        prompt = build_evaluation_prompt(job_context, candidate_context, criteria=criteria)
         raw = self._complete_json(
             system_prompt=EVALUATION_SYSTEM_PROMPT, user_prompt=prompt, model=model, timeout_seconds=timeout_seconds
         )
         return parse_evaluation_response(
-            raw, provider=self.name, model=model or DEFAULT_MODEL, cv_text_used=bool(candidate_context.get("cv_text"))
+            raw,
+            provider=self.name,
+            model=model or DEFAULT_MODEL,
+            cv_text_used=bool(candidate_context.get("cv_text")),
+            criteria=criteria,
         )
 
     def generate_job_draft(self, *, title, model, timeout_seconds) -> AIJobDraft:
@@ -99,3 +111,18 @@ class GeminiProvider(AIProvider):
             timeout_seconds=timeout_seconds,
         )
         return parse_criteria_suggestion_response(raw, provider=self.name, model=model or DEFAULT_MODEL)
+
+    def generate_formal_jd(self, *, job_context, model, timeout_seconds) -> AIFormalJDDraft:
+        prompt = build_formal_jd_prompt(job_context)
+        raw = self._complete_json(
+            system_prompt=FORMAL_JD_SYSTEM_PROMPT, user_prompt=prompt, model=model, timeout_seconds=timeout_seconds
+        )
+        return parse_formal_jd_response(raw, provider=self.name, model=model or DEFAULT_MODEL)
+
+    def suggest_nearest_branch(self, *, location_text, branches, model, timeout_seconds) -> AIBranchMatch:
+        prompt = build_branch_match_prompt(location_text, branches)
+        raw = self._complete_json(
+            system_prompt=BRANCH_MATCH_SYSTEM_PROMPT, user_prompt=prompt, model=model, timeout_seconds=timeout_seconds
+        )
+        valid_ids = {b["id"] for b in branches}
+        return parse_branch_match_response(raw, valid_branch_ids=valid_ids, provider=self.name, model=model or DEFAULT_MODEL)

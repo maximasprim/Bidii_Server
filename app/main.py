@@ -18,8 +18,10 @@ from app.routers import (
     admin_auth,
     admin_branches,
     admin_jobs,
+    admin_internal_notifications,
     admin_loan_tiers,
     admin_news,
+    admin_notifications,
     admin_role_permissions,
     branches,
     careers,
@@ -62,6 +64,21 @@ def _migrate_schema() -> None:
         columns = {c["name"] for c in inspector.get_columns("admin_users")}
         if "role" not in columns:
             statements.append("ALTER TABLE admin_users ADD COLUMN role VARCHAR(20) DEFAULT 'admin'")
+        if "branch_id" not in columns:
+            statements.append("ALTER TABLE admin_users ADD COLUMN branch_id VARCHAR(36)")
+        if "managed_branch_ids" not in columns:
+            statements.append("ALTER TABLE admin_users ADD COLUMN managed_branch_ids JSON")
+
+    if "loan_applications" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("loan_applications")}
+        if "location" not in columns:
+            statements.append("ALTER TABLE loan_applications ADD COLUMN location VARCHAR(200)")
+        if "assigned_branch_id" not in columns:
+            statements.append("ALTER TABLE loan_applications ADD COLUMN assigned_branch_id VARCHAR(36)")
+        if "branch_assignment_method" not in columns:
+            statements.append("ALTER TABLE loan_applications ADD COLUMN branch_assignment_method VARCHAR(20)")
+        if "assigned_loan_officer_id" not in columns:
+            statements.append("ALTER TABLE loan_applications ADD COLUMN assigned_loan_officer_id VARCHAR(36)")
 
     if "job_openings" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("job_openings")}
@@ -71,6 +88,8 @@ def _migrate_schema() -> None:
             statements.append("ALTER TABLE job_openings ADD COLUMN responsibilities JSON DEFAULT '[]'")
         if "application_deadline" not in columns:
             statements.append("ALTER TABLE job_openings ADD COLUMN application_deadline DATE")
+        if "jd_content" not in columns:
+            statements.append("ALTER TABLE job_openings ADD COLUMN jd_content JSON")
 
     if "news_articles" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("news_articles")}
@@ -268,6 +287,7 @@ app.include_router(sitemap.router)
 app.include_router(admin_news.router)
 app.include_router(jobs.router)
 app.include_router(admin_jobs.router)
+app.include_router(admin_internal_notifications.router)
 app.include_router(loan_tiers.router)
 app.include_router(admin_loan_tiers.router)
 app.include_router(admin_ats_config.router)
@@ -275,6 +295,7 @@ app.include_router(admin_ats_screening.router)
 app.include_router(admin_ats_vetting.router)
 app.include_router(admin_ai.router)
 app.include_router(admin_role_permissions.router)
+app.include_router(admin_notifications.router)
 app.include_router(branches.router)
 app.include_router(admin_branches.router)
 

@@ -32,6 +32,10 @@ class LoanApplicationCreate(BaseModel):
     phone: str = Field(min_length=10, max_length=40)
     email: EmailStr
     monthly_income: str = Field(min_length=1, max_length=100)
+    # Free-text - the applicant's own description of where they are
+    # (town, estate, neighborhood). Used to route the application to the
+    # nearest branch - see app/services/branch_assignment.py.
+    location: str = Field(min_length=2, max_length=200)
 
 
 class LoanApplicationRead(BaseModel):
@@ -51,6 +55,12 @@ class LoanApplicationRead(BaseModel):
     phone: str
     email: EmailStr
     monthly_income: str
+    location: str | None = None
+    assigned_branch_id: str | None = None
+    assigned_branch_name: str | None = None
+    branch_assignment_method: str | None = None
+    assigned_loan_officer_id: str | None = None
+    assigned_loan_officer_name: str | None = None
     status: LoanApplicationStatus
     created_at: datetime
 

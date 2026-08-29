@@ -47,6 +47,7 @@ class JobOpeningRead(BaseModel):
     responsibilities: list[str] = Field(default_factory=list)
     is_open: bool
     application_deadline: date | None = None
+    jd_content: dict | None = None
     created_at: datetime
     updated_at: datetime
 

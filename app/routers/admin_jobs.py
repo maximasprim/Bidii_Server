@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.career_application import CareerApplication
 from app.models.job_opening import JobOpening
+from app.schemas.job_description import JDContent, JDResponse, JDUpdateRequest
 from app.schemas.job_opening import (
     AdminJobOpeningListResponse,
     JobOpeningCreate,
@@ -122,3 +124,75 @@ def delete_job(job_id: str, db: Session = Depends(get_db)) -> None:
 
     db.delete(job)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Formal Job Description document — see app/schemas/job_description.py for
+# the JDContent shape and app/services/jd_pdf.py for how it's rendered.
+# AI generation lives in admin_ai.py (POST /api/admin/ai/jobs/{job_id}/jd/generate),
+# matching where every other "AI, outside of scoring one candidate" endpoint
+# lives — this file only owns saving the (admin-reviewed) content and
+# rendering/downloading the PDF from whatever's currently saved.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{job_id}/jd", response_model=JDResponse)
+def get_job_description(job_id: str, db: Session = Depends(get_db)) -> JDResponse:
+    job = db.query(JobOpening).filter(JobOpening.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found.")
+    return JDResponse(data=JDContent.model_validate(job.jd_content) if job.jd_content else None)
+
+
+@router.put("/{job_id}/jd", response_model=JDResponse)
+def save_job_description(job_id: str, payload: JDUpdateRequest, db: Session = Depends(get_db)) -> JDResponse:
+    """
+    Saves (admin-reviewed, possibly hand-edited) JD content for this job.
+    Whether it came from the AI generator or was typed by hand makes no
+    difference here — either way it's saved through this one endpoint,
+    same as every other "AI draft becomes real data" flow in this app
+    (see the module docstrings on app/services/ai_job_generation.py and
+    app/services/ai_criteria_suggestion.py for the same pattern).
+    """
+    job = db.query(JobOpening).filter(JobOpening.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found.")
+
+    job.jd_content = payload.jd_content.model_dump()
+    db.commit()
+    db.refresh(job)
+    return JDResponse(data=JDContent.model_validate(job.jd_content))
+
+
+@router.get("/{job_id}/jd/pdf")
+def download_job_description_pdf(job_id: str, db: Session = Depends(get_db)):
+    """
+    Renders the currently-saved jd_content into the fixed-format PDF and
+    returns it directly — nothing is written to disk or Supabase Storage;
+    it's generated fresh into memory on every request, since rendering is
+    cheap and this way the PDF can never go stale relative to the saved
+    content.
+    """
+    job = db.query(JobOpening).filter(JobOpening.id == job_id).first()
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found.")
+    if not job.jd_content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This job has no formal job description yet — generate or write one first.",
+        )
+
+    import io
+
+    from app.services.jd_pdf import render_jd_pdf
+
+    buffer = io.BytesIO()
+    render_jd_pdf(job=job, jd_content=job.jd_content, output_path=buffer)
+    pdf_bytes = buffer.getvalue()
+
+    filename = f"JD - {job.title}.pdf".replace("/", "-")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

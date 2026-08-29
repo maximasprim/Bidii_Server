@@ -39,7 +39,6 @@ class Settings(BaseSettings):
     # via .env if you ever point this backend at a staging frontend.
     site_url: str = "https://www.bidiicreditkenya.co.ke"
 
-
     # Admin dashboard auth. Change these in production via .env — the
     # defaults here are only so the app runs out of the box in dev.
     admin_username: str = "admin"
@@ -59,6 +58,19 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_default_model: str = "gemini-1.5-flash"
     ai_request_timeout_seconds: int = 30
+
+    # --- Outbound candidate email notifications --------------------------
+    # All optional. When smtp_host is unset, the notification system skips
+    # sending and logs a "skipped_not_configured" entry instead of raising
+    # — see app/services/email_sender.py. Never sent to the frontend.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = True
+    smtp_from_email: str | None = None
+    smtp_from_name: str = "Bidii Credit HR"
+    company_name: str = "Bidii Credit"
     
     @property
     def cors_origin_list(self) -> list[str]:
