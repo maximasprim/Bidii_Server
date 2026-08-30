@@ -2,3 +2,19 @@
 GET http://localhost:8000/api/health
 ###
 GET https://bidii-server.onrender.com/api/health
+###
+POST http://localhost:8000/api/admin/login
+Content-Type: application/json
+
+{
+  "username": "Admin",
+  "password": "Bidii@Kenya"
+}
+###
+POST http://localhost:8000/api/admin/notifications/test
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMDY3ZTkyZC04NzFkLTQzYTAtYjM4OS0wODRhYmM5NDY1N2EiLCJleHAiOjE3ODgxMTAxNzMsInJvbGUiOiJhZG1pbiJ9.MIYEq3gW3DOmplUnNrkhhaZecalmv7_3W9F9S4k7h6A
+
+{
+  "to_email": "michaelmwasame6@gmail.com"
+}

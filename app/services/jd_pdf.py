@@ -25,7 +25,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import (
-    PageBreak,
+    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -104,7 +104,7 @@ def _header_footer(canvas, doc, job_title: str):
         logo_height = 1.4 * cm
         canvas.drawImage(
             str(LOGO_PATH),
-            doc.leftMargin,
+            (doc.pagesize[0] - logo_width) / 2,  # horizontally centered, was doc.leftMargin (flush left)
             doc.pagesize[1] - doc.topMargin + 0.3 * cm,
             width=logo_width,
             height=logo_height,
@@ -207,7 +207,6 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
     story.append(kr_table)
     story.append(Spacer(1, 14))
 
-    story.append(Paragraph("Other Responsibilities", _section_title))
     other_rows = [
         [
             Paragraph("<b>Reporting Relationships:</b> Indicate the jobs that report to this position.", _body),
@@ -242,9 +241,17 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
             ]
         )
     )
-    story.append(other_table)
-
-    story.append(PageBreak())
+    # KeepTogether: without this, a long Key Responsibilities table above
+    # can push this table right up against the bottom margin, and Platypus
+    # will happily split THIS table mid-row across pages too (e.g. row 1
+    # on page 1, rows 2-4 on page 2). KeepTogether makes the heading+table
+    # move as one atomic unit: either the whole thing fits here, or the
+    # whole thing moves to the next page - never split. No PageBreak()
+    # after this on purpose - content should flow straight into whatever
+    # room is left on the page rather than always starting a fresh page
+    # here, which was leaving a large empty gap on shorter documents.
+    story.append(KeepTogether([Paragraph("Other Responsibilities", _section_title), other_table]))
+    story.append(Spacer(1, 14))
 
     qual_box_content = [
         Paragraph(
@@ -289,25 +296,53 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
     story.append(competency_table)
     story.append(Spacer(1, 20))
 
-    story.append(Paragraph("<b>ACCEPTANCE</b>", _body))
-    story.append(Spacer(1, 6))
+    # Grouped with KeepTogether so a heading can't get orphaned at the
+    # bottom of a page while its content lands on the next one - a real
+    # risk now that content flows continuously instead of always getting
+    # a fresh page here (see the "Other Responsibilities" comment above).
     story.append(
-        Paragraph(
-            "I have read and understood my Job Description. I understand that this Job Description together with "
-            "agreed objectives will be used as a basis to evaluate my performance.",
-            _body,
+        KeepTogether(
+            [
+                Paragraph("<b>ACCEPTANCE</b>", _body),
+                Spacer(1, 6),
+                Paragraph(
+                    "I have read and understood my Job Description. I understand that this Job Description "
+                    "together with agreed objectives will be used as a basis to evaluate my performance.",
+                    _body,
+                ),
+                Spacer(1, 14),
+                Paragraph("<b>SIGNED BY JOB HOLDER</b>", _body),
+                Spacer(1, 24),
+                Paragraph(
+                    "Name: _______________________  Signature: _______________  Date: _____________", _body
+                ),
+            ]
         )
     )
-    story.append(Spacer(1, 14))
-    story.append(Paragraph("<b>SIGNED BY JOB HOLDER</b>", _body))
     story.append(Spacer(1, 24))
-    story.append(Paragraph("Name: _______________________  Signature: _______________  Date: _____________", _body))
+    story.append(
+        KeepTogether(
+            [
+                Paragraph("<b>APPROVALS</b>", _body),
+                Spacer(1, 24),
+                Paragraph(
+                    f"_______________________  Date: _____________<br/><b>{APPROVER_1_NAME}</b><br/>{APPROVER_1_TITLE}",
+                    _body,
+                ),
+            ]
+        )
+    )
     story.append(Spacer(1, 24))
-    story.append(Paragraph("<b>APPROVALS</b>", _body))
-    story.append(Spacer(1, 24))
-    story.append(Paragraph(f"_______________________  Date: _____________<br/><b>{APPROVER_1_NAME}</b><br/>{APPROVER_1_TITLE}", _body))
-    story.append(Spacer(1, 24))
-    story.append(Paragraph(f"_______________________  Date: _____________<br/><b>{APPROVER_2_NAME}</b><br/>{APPROVER_2_TITLE}", _body))
+    story.append(
+        KeepTogether(
+            [
+                Paragraph(
+                    f"_______________________  Date: _____________<br/><b>{APPROVER_2_NAME}</b><br/>{APPROVER_2_TITLE}",
+                    _body,
+                )
+            ]
+        )
+    )
 
     doc.build(
         story,
