@@ -53,16 +53,44 @@ def _page_meta(page: int, page_size: int, total: int) -> PageMeta:
     return PageMeta(page=page, page_size=page_size, total=total, total_pages=total_pages)
 
 
-@router.get("/stats", response_model=DashboardStats)
-def get_dashboard_stats(db: Session = Depends(get_db)) -> DashboardStats:
+@router.get("/stats", response_model=DashboardStats, dependencies=[Depends(require_menu_access("/admin"))])
+def get_dashboard_stats(
+    db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)
+) -> DashboardStats:
+    """
+    admin/hr/marketing_manager see company-wide figures, unrestricted -
+    unchanged from before. branch_office_admin and loan_officer see only
+    their own branch's loan figures - contacts and career-application
+    stats are zeroed out for them entirely, since those aren't areas
+    either role has menu access to anyway (see DEFAULT_MENU_ACCESS) and
+    showing them numbers for data they can't open would just be
+    confusing, not useful.
+
+    "Their own branch's loan figures" means: branch_office_admin sees
+    every application across all of managed_branch_ids (their whole
+    area), loan_officer sees every application at their single home
+    branch (branch_id) - not narrowed further to only applications
+    assigned to them personally. That's a deliberate difference from the
+    Loan Applications list page, which does scope a loan_officer down to
+    just their own assigned queue - the list is "what do I need to work
+    on", the Overview here is "how is my branch doing", and those are
+    reasonably different questions with different scopes.
+    """
     seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
 
-    total_contacts = db.query(func.count(ContactMessage.id)).scalar() or 0
-    total_loans = db.query(func.count(LoanApplication.id)).scalar() or 0
-    total_careers = db.query(func.count(CareerApplication.id)).scalar() or 0
+    branch_scoped = current_admin.role in ("branch_office_admin", "loan_officer")
+    loan_base = db.query(LoanApplication)
+    if current_admin.role == "branch_office_admin":
+        loan_base = loan_base.filter(LoanApplication.assigned_branch_id.in_(current_admin.managed_branch_ids or []))
+    elif current_admin.role == "loan_officer":
+        loan_base = loan_base.filter(LoanApplication.assigned_branch_id == current_admin.branch_id)
+
+    total_contacts = 0 if branch_scoped else (db.query(func.count(ContactMessage.id)).scalar() or 0)
+    total_loans = loan_base.with_entities(func.count(LoanApplication.id)).scalar() or 0
+    total_careers = 0 if branch_scoped else (db.query(func.count(CareerApplication.id)).scalar() or 0)
 
     loan_status_rows = (
-        db.query(LoanApplication.status, func.count(LoanApplication.id))
+        loan_base.with_entities(LoanApplication.status, func.count(LoanApplication.id))
         .group_by(LoanApplication.status)
         .all()
     )
@@ -70,17 +98,20 @@ def get_dashboard_stats(db: Session = Depends(get_db)) -> DashboardStats:
     for s in LoanApplicationStatus:
         loan_by_status.setdefault(s.value, 0)
 
-    career_status_rows = (
-        db.query(CareerApplication.status, func.count(CareerApplication.id))
-        .group_by(CareerApplication.status)
-        .all()
-    )
-    career_by_status = {status_.value: count for status_, count in career_status_rows}
-    for s in CareerApplicationStatus:
-        career_by_status.setdefault(s.value, 0)
+    if branch_scoped:
+        career_by_status: dict[str, int] = {s.value: 0 for s in CareerApplicationStatus}
+    else:
+        career_status_rows = (
+            db.query(CareerApplication.status, func.count(CareerApplication.id))
+            .group_by(CareerApplication.status)
+            .all()
+        )
+        career_by_status = {status_.value: count for status_, count in career_status_rows}
+        for s in CareerApplicationStatus:
+            career_by_status.setdefault(s.value, 0)
 
     product_rows = (
-        db.query(
+        loan_base.with_entities(
             LoanApplication.product_slug,
             LoanApplication.product_name,
             func.count(LoanApplication.id),
@@ -100,16 +131,23 @@ def get_dashboard_stats(db: Session = Depends(get_db)) -> DashboardStats:
     ]
 
     contacts_recent = (
-        db.query(func.count(ContactMessage.id)).filter(ContactMessage.created_at >= seven_days_ago).scalar() or 0
+        0
+        if branch_scoped
+        else (db.query(func.count(ContactMessage.id)).filter(ContactMessage.created_at >= seven_days_ago).scalar() or 0)
     )
     loans_recent = (
-        db.query(func.count(LoanApplication.id)).filter(LoanApplication.created_at >= seven_days_ago).scalar() or 0
+        loan_base.with_entities(func.count(LoanApplication.id))
+        .filter(LoanApplication.created_at >= seven_days_ago)
+        .scalar()
+        or 0
     )
     careers_recent = (
-        db.query(func.count(CareerApplication.id)).filter(CareerApplication.created_at >= seven_days_ago).scalar() or 0
+        0
+        if branch_scoped
+        else (db.query(func.count(CareerApplication.id)).filter(CareerApplication.created_at >= seven_days_ago).scalar() or 0)
     )
 
-    total_amount = db.query(func.sum(LoanApplication.amount)).scalar() or 0
+    total_amount = loan_base.with_entities(func.sum(LoanApplication.amount)).scalar() or 0
 
     return DashboardStats(
         total_contacts=total_contacts,
@@ -310,7 +348,7 @@ def list_branch_loan_officers(
     db: Session = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin),
 ) -> list[AdminUserRead]:
-    """Loan officers based at one branch - populates the assignment dropdown for that branch."""
+    """Loan officers based at one branch — populates the assignment dropdown for that branch."""
     if current_admin.role == "branch_office_admin" and branch_id not in (current_admin.managed_branch_ids or []):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't manage that branch.")
     if current_admin.role not in ("admin", "branch_office_admin"):
@@ -438,7 +476,7 @@ def download_career_application_cv(
 
 
 # ---------------------------------------------------------------------------
-# Admin user management - lets a logged-in admin create additional admin
+# Admin user management — lets a logged-in admin create additional admin
 # accounts from the dashboard, instead of every admin sharing one set of
 # env-var credentials.
 # ---------------------------------------------------------------------------
@@ -523,7 +561,7 @@ def _guard_deactivation(user: AdminUser, current_admin: AdminUser, db: Session) 
     Shared by DELETE /users/{id} and PATCH /users/{id} (when it sets
     is_active=False) so both paths enforce the same lockout prevention:
     you can't deactivate yourself, and the last remaining active admin
-    can't be deactivated by anyone. Compares by ID, not username - usernames
+    can't be deactivated by anyone. Compares by ID, not username — usernames
     can change, IDs don't.
     """
     if user.id == current_admin.id:
@@ -562,7 +600,7 @@ def update_admin_user(
                 detail=f'An admin with username "{payload.username}" already exists.',
             )
         user.username = payload.username
-        # No session-invalidation workaround needed here - the JWT subject
+        # No session-invalidation workaround needed here — the JWT subject
         # is current_admin.id, which doesn't change when a username does.
 
     if payload.password is not None:
@@ -594,7 +632,6 @@ def update_admin_user(
     logger.info("Admin user %r updated account %r", current_admin.username, user.username)
 
     return AdminUserUpdateResponse(data=AdminUserRead.model_validate(user))
-
 
 # import logging
 # import math
