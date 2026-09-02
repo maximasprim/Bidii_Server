@@ -11,7 +11,7 @@ from app.schemas.loan_application import (
     LoanApplicationCreate,
     LoanApplicationCreateResponse,
 )
-from app.services.branch_assignment import assign_branch
+from app.services.branch_assignment import COVERED_COUNTIES, assign_branch
 from app.services.internal_notifications import notify_branch_of_new_application
 from app.services.loan_application_duplicate_check import find_pending_duplicate
 from app.services.loan_application_presenter import to_loan_application_read
