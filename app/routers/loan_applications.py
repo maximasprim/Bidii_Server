@@ -72,6 +72,15 @@ def submit_loan_application(
             ),
         )
 
+    if payload.county not in COVERED_COUNTIES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"We're sorry, we don't currently cover loan applications from {payload.county} yet. "
+                f"We're currently serving {', '.join(COVERED_COUNTIES)} counties."
+            ),
+        )
+
     existing_pending = find_pending_duplicate(db, id_number=payload.id_number, full_name=payload.full_name)
     if existing_pending is not None:
         raise HTTPException(
@@ -99,13 +108,14 @@ def submit_loan_application(
         email=payload.email,
         monthly_income=payload.monthly_income,
         location=payload.location,
+        county=payload.county,
     )
 
     # Every application always gets routed to some real, active branch -
     # see app/services/branch_assignment.py for the exact/AI/fallback
     # strategy. This never raises: a branch-matching problem must never
     # block an applicant's submission from going through.
-    branch_id, method = assign_branch(db, payload.location)
+    branch_id, method = assign_branch(db, payload.location, product_slug=payload.product_slug, county=payload.county)
     record.assigned_branch_id = branch_id
     record.branch_assignment_method = method
 

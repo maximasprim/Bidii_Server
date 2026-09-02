@@ -29,6 +29,21 @@ at a glance which assignments are worth a manual double-check rather than
 trusting a possibly-wrong branch silently forever - the manual reassign
 endpoint (see app/routers/admin.py) always remains available regardless
 of which tier assigned it.
+
+PRODUCT_BRANCH_RESTRICTIONS below overrides this per product: an
+applicant's location still picks which of the *allowed* branches for
+that product is the best match, using the exact same three tiers - the
+restriction just narrows the candidate list before any of that runs.
+
+COVERED_COUNTIES + Branch.county work the same way, but for every
+application rather than one product: an applicant's selected county
+narrows the candidate list down to branches actually serving that
+county before the location text picks the closest one within it. The
+two restrictions stack - a check-off loan applicant in a restricted
+county gets narrowed by product first, then by county, always with a
+fallback to the less-restricted list rather than ever blocking someone
+outright (see _restrict_for_county's docstring for exactly how that
+fallback chain works).
 """
 
 import logging
@@ -41,6 +56,23 @@ from app.services.ai_providers.base import AIProviderError
 from app.services.ai_providers.factory import default_model_for, first_configured_provider, get_provider
 
 logger = logging.getLogger("bidii.branch_assignment")
+
+COVERED_COUNTIES = ["Nairobi", "Nyeri", "Kiambu", "Murang'a", "Kirinyaga", "Kajiado", "Machakos", "Nakuru"]
+# TEMPORARY, product-specific routing restriction: check-off loan
+# applications are only ever routed to whichever of these branches
+# matches best, regardless of the applicant's actual stated location.
+# Matched case-insensitively as a substring against each active branch's
+# name or address - e.g. "headoffice" matches a branch named "Head
+# Office - Nairobi", "ngong" matches "Ngong Road Branch". If your actual
+# branch names don't contain these words, this silently matches nothing
+# and falls back to normal unrestricted routing (logged as a warning,
+# not left silent - see assign_branch below) - worth confirming your
+# real branch names against these keywords before relying on this.
+# To revert to normal routing for this product, delete its entry here
+# (or set the value to an empty list) - nothing else needs to change.
+PRODUCT_BRANCH_RESTRICTIONS: dict[str, list[str]] = {
+    "check-off-loans": ["Head Office & Ngong Road"],
+}
 
 # Generic words that appear in lots of addresses/location text and would
 # cause false matches if treated as meaningful location signal on their
@@ -60,6 +92,25 @@ def _active_branches(db: Session) -> list[Branch]:
     return db.query(Branch).filter(Branch.is_active.is_(True)).order_by(Branch.display_order.asc()).all()
 
 
+def _restrict_for_product(branches: list[Branch], product_slug: str | None) -> list[Branch]:
+    keywords = PRODUCT_BRANCH_RESTRICTIONS.get(product_slug or "", [])
+    if not keywords:
+        return branches
+    restricted = [
+        b for b in branches if any(kw in b.name.lower() or kw in b.address.lower() for kw in keywords)
+    ]
+    if not restricted:
+        logger.warning(
+            "Product %r has a branch restriction configured (%s) but no active branch name/address matched it — "
+            "falling back to normal unrestricted routing. Check PRODUCT_BRANCH_RESTRICTIONS in "
+            "branch_assignment.py against your actual branch names.",
+            product_slug,
+            keywords,
+        )
+        return branches
+    return restricted
+
+
 def _direct_match(location_text: str, branches: list[Branch]) -> Branch | None:
     """
     Token-level match, not whole-string containment - "I live in Kisumu
@@ -77,8 +128,34 @@ def _direct_match(location_text: str, branches: list[Branch]) -> Branch | None:
             return branch
     return None
 
+def _restrict_for_county(branches: list[Branch], county: str | None) -> list[Branch]:
+    """
+    Narrows to branches whose Branch.county matches (case-insensitive)
+    the applicant's selected county. Falls back to the *un*-county-filtered
+    list it was given (which may already be product-restricted - see
+    assign_branch) if nothing matches, rather than the full unfiltered
+    branch list - a genuinely-restricted product's rule should still win
+    over an incomplete/missing county assignment on branches. This is the
+    same kind of gap as PRODUCT_BRANCH_RESTRICTIONS's: it only works once
+    an admin has actually gone into the Branches page and set each
+    branch's county - until then this matches nothing for every county
+    and always falls back, which is logged, not silent.
+    """
+    if not county:
+        return branches
+    normalized = county.strip().lower()
+    restricted = [b for b in branches if b.county and b.county.strip().lower() == normalized]
+    if not restricted:
+        logger.warning(
+            "County %r has no active branch assigned to it yet — falling back to routing without county "
+            "narrowing for this application. Assign counties to branches on the Branches admin page to fix this.",
+            county,
+        )
+        return branches
+    return restricted
 
-def assign_branch(db: Session, location_text: str) -> tuple[str | None, str | None]:
+
+def assign_branch(db: Session, location_text: str, product_slug: str | None = None, county: str | None = None) -> tuple[str | None, str | None]:
     """
     Returns (branch_id, method). branch_id is None only if there are
     literally no active branches configured at all - everything else
@@ -88,6 +165,9 @@ def assign_branch(db: Session, location_text: str) -> tuple[str | None, str | No
     if not branches:
         logger.warning("No active branches configured - can't assign a branch to a new loan application.")
         return None, None
+
+    branches = _restrict_for_product(branches, product_slug)
+    branches = _restrict_for_county(branches, county)
 
     direct = _direct_match(location_text, branches)
     if direct is not None:

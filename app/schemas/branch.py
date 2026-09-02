@@ -12,6 +12,7 @@ class BranchCreate(BaseModel):
     lng: float = Field(ge=-180, le=180)
     display_order: int = 0
     is_active: bool = True
+    county: str | None = Field(default=None, max_length=50)
 
 
 class BranchUpdate(BaseModel):
@@ -23,6 +24,7 @@ class BranchUpdate(BaseModel):
     lng: float | None = Field(default=None, ge=-180, le=180)
     display_order: int | None = None
     is_active: bool | None = None
+    county: str | None = Field(default=None, max_length=50)
 
 
 class BranchRead(BaseModel):
@@ -37,6 +39,7 @@ class BranchRead(BaseModel):
     lng: float
     display_order: int
     is_active: bool
+    county: str | None = None
     created_at: datetime
     updated_at: datetime
 

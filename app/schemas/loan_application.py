@@ -36,6 +36,7 @@ class LoanApplicationCreate(BaseModel):
     # (town, estate, neighborhood). Used to route the application to the
     # nearest branch - see app/services/branch_assignment.py.
     location: str = Field(min_length=2, max_length=200)
+    county: str = Field(min_length=2, max_length=50)
 
 
 class LoanApplicationRead(BaseModel):
@@ -56,6 +57,7 @@ class LoanApplicationRead(BaseModel):
     email: EmailStr
     monthly_income: str
     location: str | None = None
+    county: str | None = None
     assigned_branch_id: str | None = None
     assigned_branch_name: str | None = None
     branch_assignment_method: str | None = None

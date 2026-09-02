@@ -41,7 +41,7 @@ class LoanApplication(Base):
     # from before this column existed don't break; every new submission is
     # required to include one (enforced in the Create schema, not here).
     location: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
-
+    county: Mapped[str | None] = mapped_column(String(50), nullable=True, default=None)
     # Which branch this application is routed to, and how that was decided
     # - see app/services/branch_assignment.py. Every application always
     # ends up assigned to some real, active branch (never left blank) -
