@@ -15,6 +15,7 @@ class AdminUser(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(20), default="admin")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True, default=None)
     branch_id: Mapped[str | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
     managed_branch_ids: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(

@@ -74,6 +74,8 @@ def _migrate_schema() -> None:
             statements.append("ALTER TABLE admin_users ADD COLUMN branch_id VARCHAR(36)")
         if "managed_branch_ids" not in columns:
             statements.append("ALTER TABLE admin_users ADD COLUMN managed_branch_ids JSON")
+        if "email" not in columns:
+            statements.append("ALTER TABLE admin_users ADD COLUMN email VARCHAR(320)")
         if "role" in columns and _rows_exist("SELECT 1 FROM admin_users WHERE role = 'regional_manager' LIMIT 1"):
             statements.append("UPDATE admin_users SET role = 'branch_office_admin' WHERE role = 'regional_manager'")
 
@@ -108,6 +110,9 @@ def _migrate_schema() -> None:
             statements.append("ALTER TABLE loan_applications ADD COLUMN branch_assignment_method VARCHAR(20)")
         if "assigned_loan_officer_id" not in columns:
             statements.append("ALTER TABLE loan_applications ADD COLUMN assigned_loan_officer_id VARCHAR(36)")
+        if "county" not in columns:
+            statements.append("ALTER TABLE loan_applications ADD COLUMN county VARCHAR(50)")
+
 
     if "branches" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("branches")}
