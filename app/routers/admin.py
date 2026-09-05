@@ -518,6 +518,7 @@ def create_admin_user(
         username=payload.username,
         password_hash=hash_password(payload.password),
         role=payload.role,
+        email=payload.email,
         branch_id=payload.branch_id,
         managed_branch_ids=payload.managed_branch_ids,
     )
@@ -608,6 +609,9 @@ def update_admin_user(
 
     if payload.role is not None:
         user.role = payload.role
+
+    if payload.email is not None:
+        user.email = payload.email
 
     if payload.branch_id is not None:
         if not db.query(Branch).filter(Branch.id == payload.branch_id).first():
