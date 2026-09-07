@@ -25,8 +25,10 @@ class JobOpeningUpdate(BaseModel):
     location: str | None = Field(default=None, min_length=2, max_length=150)
     type: JobType | None = None
     description: str | None = Field(default=None, min_length=10, max_length=3000)
-    requirements: list[str] = Field(default_factory=list, max_length=30)
-    responsibilities: list[str] = Field(default_factory=list, max_length=30)
+    # requirements: list[str] = Field(default_factory=list, max_length=30)
+    # responsibilities: list[str] = Field(default_factory=list, max_length=30)
+    requirements: list[str] | None = Field(default=None, max_length=30)
+    responsibilities: list[str] | None = Field(default=None, max_length=30)
     is_open: bool | None = None
     slug: str | None = Field(default=None, max_length=200)
     application_deadline: date | None = None
