@@ -83,7 +83,7 @@ def _email_recipients(recipients: list[AdminUser], *, branch_name: str, applicat
     subject = f"New loan application — {branch_name}"
     body = (
         f"Hi,\n\n"
-        f"A new loan application has been routed to {branch_name}.\n\n"
+        f"A new loan application has been routed to {branch_name} branch.\n\n"
         f"Applicant: {application.full_name}\n"
         f"Phone: {application.phone}\n"
         f"Product: {application.product_name} ({application.tier_label})\n"
@@ -91,7 +91,8 @@ def _email_recipients(recipients: list[AdminUser], *, branch_name: str, applicat
         f"Location: {application.location or 'Not provided'}\n\n"
         f"Log in to the admin dashboard to review and assign it to a loan officer:\n"
         f"{settings.site_url}/admin/loan-applications\n\n"
-        f"— {settings.company_name} System"
+        f"Best regards,\n"
+        f"{settings.company_name} System."
     )
 
     for admin in recipients:
