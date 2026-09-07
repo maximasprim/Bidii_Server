@@ -18,6 +18,7 @@ from app.schemas.job_opening import (
 )
 from app.services.auth import get_current_admin
 from app.services.slugify import slugify
+from app.models.ats import ATSConfiguration
 
 router = APIRouter(prefix="/api/admin/jobs", tags=["admin-jobs"], dependencies=[Depends(get_current_admin)])
 
@@ -121,6 +122,15 @@ def delete_job(job_id: str, db: Session = Depends(get_db)) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Can't delete a posting with {application_count} application(s) on file. Close it instead.",
         )
+
+    # A job can have an ATS configuration (and criteria) even with zero
+    # applications - it's created the first time an admin opens the ATS
+    # Configuration tab. Delete it first so the FK on ats_configurations
+    # doesn't block deleting the job.
+    config = db.query(ATSConfiguration).filter(ATSConfiguration.job_id == job_id).first()
+    if config is not None:
+        db.delete(config)
+        db.flush()  # flush to avoid FK constraint violation when deleting the job
 
     db.delete(job)
     db.commit()
