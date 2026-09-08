@@ -38,6 +38,9 @@ async def submit_career_application(
     role: str = Form(..., min_length=1, max_length=150),
     cover_note: str = Form(..., min_length=10, max_length=5000),
     job_id: str | None = Form(None),
+    date_available: str | None = Form(None, max_length=100),
+    desired_pay: str | None = Form(None, max_length=100),
+    location: str | None = Form(None, max_length=200),
     cv: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> CareerApplicationCreateResponse:
@@ -119,6 +122,9 @@ async def submit_career_application(
         phone=phone,
         role=resolved_role,
         cover_note=cover_note,
+        date_available=(date_available or "").strip() or None,
+        desired_pay=(desired_pay or "").strip() or None,
+        location=(location or "").strip() or None,
         cv_original_filename=original_name,
         cv_stored_filename=storage_path,
     )

@@ -114,6 +114,15 @@ def _migrate_schema() -> None:
     #         statements.append("ALTER TABLE loan_applications ADD COLUMN county VARCHAR(50)")
 
 
+    if "career_applications" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("career_applications")}
+        if "date_available" not in columns:
+            statements.append("ALTER TABLE career_applications ADD COLUMN date_available VARCHAR(100)")
+        if "desired_pay" not in columns:
+            statements.append("ALTER TABLE career_applications ADD COLUMN desired_pay VARCHAR(100)")
+        if "location" not in columns:
+            statements.append("ALTER TABLE career_applications ADD COLUMN location VARCHAR(200)")
+
     if "branches" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("branches")}
         if "county" not in columns:

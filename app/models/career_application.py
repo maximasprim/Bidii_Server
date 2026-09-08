@@ -33,6 +33,9 @@ class CareerApplication(Base):
     phone: Mapped[str] = mapped_column(String(40))
     role: Mapped[str] = mapped_column(String(150))
     cover_note: Mapped[str] = mapped_column(Text)
+    date_available: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    desired_pay: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # The original filename (for display) vs. the sanitized/uuid-prefixed
     # name it's actually stored under on disk (to avoid collisions and path

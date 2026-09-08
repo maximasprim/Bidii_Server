@@ -15,6 +15,9 @@ class CareerApplicationRead(BaseModel):
     phone: str
     role: str
     cover_note: str
+    date_available: str | None = None
+    desired_pay: str | None = None
+    location: str | None = None
     cv_original_filename: str
     status: CareerApplicationStatus
     created_at: datetime
