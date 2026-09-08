@@ -29,6 +29,15 @@ of "loan processing"); the way to cover that is to add multiple
 match_keywords per criterion covering the different ways an applicant
 might phrase it.
 
+How many of a criterion's match_keywords need to be found is governed
+by the job's configured ATSConfiguration.strictness - see
+_criterion_credit below for the three levels (lenient/balanced/strict).
+This is the Weighted Scoring analogue of the AI engine's own strictness
+handling in app/services/ats_ai_evaluation.py, sharing the same
+ATSStrictness setting and the same underlying idea: partial keyword
+coverage earns partial credit rather than being all-or-nothing, except
+at the strict end where full coverage is required.
+
 Nothing here touches CareerApplication.status except the one explicit,
 opt-in auto-reject path described below.
 """
@@ -36,7 +45,7 @@ opt-in auto-reject path described below.
 import re
 from dataclasses import dataclass, field
 
-from app.models.ats import ATSConfiguration, ATSCriterion, ATSRecommendation
+from app.models.ats import ATSConfiguration, ATSCriterion, ATSRecommendation, ATSStrictness
 from app.models.career_application import CareerApplication
 
 # Words/endings that negate whatever keyword follows them within
@@ -117,16 +126,45 @@ def _is_negated(text: str, match_start: int) -> bool:
     return any(word in NEGATION_CUES or word.endswith("n't") for word in preceding_words)
 
 
-def _criterion_matches(criterion: ATSCriterion, text: str) -> bool:
-    keywords = criterion.match_keywords or []
+def _criterion_credit(criterion: ATSCriterion, text: str, strictness: ATSStrictness) -> float:
+    """
+    Weight fraction (0.0-1.0) this criterion earns, based on what portion
+    of its match_keywords are actually found in `text` (each counted once,
+    ignoring negated occurrences - see _is_negated). A criterion's
+    keywords are meant as alternative phrasings of the same requirement
+    ("python", "django", "flask" for one "backend experience" criterion),
+    so how many of them a candidate needs to hit is exactly what
+    "strictness" means for Weighted Scoring - there's no LLM judgment
+    call here to be lenient or harsh about, just how much keyword
+    coverage counts as satisfying the criterion:
+
+    lenient:  any single keyword match is enough - full credit (this was
+              the engine's only behavior before strictness existed).
+    balanced: proportional credit - matching 2 of 4 keywords earns 50%,
+              matching all 4 earns 100%.
+    strict:   every configured keyword must be found - anything less
+              than full coverage earns zero credit.
+
+    A criterion with no match_keywords configured always earns 0 (nothing
+    to evaluate it against), regardless of strictness.
+    """
+    keywords = [str(k).strip().lower() for k in (criterion.match_keywords or []) if str(k).strip()]
+    if not keywords:
+        return 0.0
+
+    hits = 0
     for keyword in keywords:
-        cleaned = str(keyword).strip().lower()
-        if not cleaned:
-            continue
-        for occurrence in _keyword_pattern(cleaned).finditer(text):
+        for occurrence in _keyword_pattern(keyword).finditer(text):
             if not _is_negated(text, occurrence.start()):
-                return True
-    return False
+                hits += 1
+                break
+
+    fraction = hits / len(keywords)
+    if strictness == ATSStrictness.lenient:
+        return 1.0 if hits > 0 else 0.0
+    if strictness == ATSStrictness.strict:
+        return 1.0 if hits == len(keywords) else 0.0
+    return fraction  # balanced
 
 
 def bucket_recommendation(
@@ -169,8 +207,10 @@ def score_application(
     for criterion in criteria:
         max_possible_score += criterion.weight
         outcome = _criterion_outcome_dict(criterion)
-        if _criterion_matches(criterion, text):
-            total_score += criterion.weight
+        credit = _criterion_credit(criterion, text, config.strictness)
+        outcome["credit"] = round(credit, 2)
+        total_score += credit * criterion.weight
+        if credit >= 1.0:
             matched.append(outcome)
         else:
             missing.append(outcome)

@@ -399,10 +399,12 @@ def _parse_criteria_aware_evaluation(
             verdict = verdict_by_id.get(c["id"])
             if verdict is None:
                 outcome["detail"] = "AI response didn't address this criterion - treated as not met."
-                met = False
+                status = "not_met"
             else:
                 outcome["detail"] = verdict["detail"]
-                met = verdict["status"] == "met"
+                status = verdict["status"] if verdict["status"] in ("met", "partial", "not_met") else "not_met"
+            outcome["status"] = status
+            met = status == "met"
 
             if met:
                 total_score += c["weight"]

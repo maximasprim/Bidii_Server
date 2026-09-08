@@ -66,6 +66,27 @@ class ATSAIProviderName(str, enum.Enum):
     gemini = "gemini"
 
 
+class ATSStrictness(str, enum.Enum):
+    """
+    How much credit a "partial" AI verdict (and a disagreement between the
+    two independent AI runs on the same criterion - see
+    ats_ai_evaluation._reconcile_criteria_aware_runs) is given. Only
+    affects AI Evaluation mode - Weighted Scoring's keyword matching is
+    already fully deterministic and unaffected by this setting.
+
+    strict:   partial = 0 credit. On disagreement, the lower of the two
+              runs' credit wins (today's original, unconfigurable behavior).
+    balanced: partial = half credit. On disagreement, the two runs' credit
+              is averaged.
+    lenient:  partial = full credit. On disagreement, the higher of the two
+              runs' credit wins (benefit of the doubt).
+    """
+
+    strict = "strict"
+    balanced = "balanced"
+    lenient = "lenient"
+
+    
 class ATSConfiguration(Base):
     """
     One screening configuration per job posting. Created on demand the
@@ -99,6 +120,7 @@ class ATSConfiguration(Base):
     evaluation_mode: Mapped[ATSEvaluationMode] = mapped_column(Enum(ATSEvaluationMode), default=ATSEvaluationMode.weighted)
     ai_provider: Mapped[ATSAIProviderName | None] = mapped_column(Enum(ATSAIProviderName), nullable=True)
     ai_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    strictness: Mapped[ATSStrictness] = mapped_column(Enum(ATSStrictness), default=ATSStrictness.balanced)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.ats import ATSAIProviderName, ATSAuditAction, ATSCriterionCategory, ATSEvaluationMode, ATSRecommendation
+from app.models.ats import ATSAIProviderName, ATSAuditAction, ATSCriterionCategory, ATSEvaluationMode, ATSRecommendation, ATSStrictness
 from app.schemas.admin import PageMeta
 from app.schemas.career_application import CareerApplicationRead
 from app.schemas.job_opening import JobOpeningRead
@@ -59,6 +59,7 @@ class ATSConfigurationCreate(BaseModel):
     evaluation_mode: ATSEvaluationMode = ATSEvaluationMode.weighted
     ai_provider: ATSAIProviderName | None = None
     ai_model: str | None = Field(default=None, max_length=100)
+    strictness: ATSStrictness = ATSStrictness.balanced
 
 
 class ATSConfigurationUpdate(BaseModel):
@@ -69,7 +70,7 @@ class ATSConfigurationUpdate(BaseModel):
     evaluation_mode: ATSEvaluationMode | None = None
     ai_provider: ATSAIProviderName | None = None
     ai_model: str | None = Field(default=None, max_length=100)
-
+    strictness: ATSStrictness | None = None
 
 class ATSConfigurationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -86,6 +87,7 @@ class ATSConfigurationRead(BaseModel):
     evaluation_mode: ATSEvaluationMode = ATSEvaluationMode.weighted
     ai_provider: ATSAIProviderName | None = None
     ai_model: str | None = None
+    strictness: ATSStrictness = ATSStrictness.balanced
 
 
 class ATSConfigurationWithJob(ATSConfigurationRead):

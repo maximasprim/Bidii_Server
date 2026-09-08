@@ -113,6 +113,7 @@ def create_job_configuration(
         evaluation_mode=payload.evaluation_mode,
         ai_provider=payload.ai_provider,
         ai_model=payload.ai_model,
+        strictness=payload.strictness,
     )
     db.add(config)
     db.flush()  # assigns config.id without committing yet
@@ -163,6 +164,8 @@ def update_configuration(
         config.ai_provider = payload.ai_provider
     if payload.ai_model is not None:
         config.ai_model = payload.ai_model
+    if payload.strictness is not None:
+        config.strictness = payload.strictness
 
     if config.evaluation_mode == ATSEvaluationMode.ai and config.ai_provider is None:
         raise HTTPException(

@@ -100,18 +100,18 @@ def _migrate_schema() -> None:
         if "county" not in columns:
             statements.append("ALTER TABLE loan_applications ADD COLUMN county VARCHAR(50)")
 
-    if "loan_applications" in existing_tables:
-        columns = {c["name"] for c in inspector.get_columns("loan_applications")}
-        if "location" not in columns:
-            statements.append("ALTER TABLE loan_applications ADD COLUMN location VARCHAR(200)")
-        if "assigned_branch_id" not in columns:
-            statements.append("ALTER TABLE loan_applications ADD COLUMN assigned_branch_id VARCHAR(36)")
-        if "branch_assignment_method" not in columns:
-            statements.append("ALTER TABLE loan_applications ADD COLUMN branch_assignment_method VARCHAR(20)")
-        if "assigned_loan_officer_id" not in columns:
-            statements.append("ALTER TABLE loan_applications ADD COLUMN assigned_loan_officer_id VARCHAR(36)")
-        if "county" not in columns:
-            statements.append("ALTER TABLE loan_applications ADD COLUMN county VARCHAR(50)")
+    # if "loan_applications" in existing_tables:
+    #     columns = {c["name"] for c in inspector.get_columns("loan_applications")}
+    #     if "location" not in columns:
+    #         statements.append("ALTER TABLE loan_applications ADD COLUMN location VARCHAR(200)")
+    #     if "assigned_branch_id" not in columns:
+    #         statements.append("ALTER TABLE loan_applications ADD COLUMN assigned_branch_id VARCHAR(36)")
+    #     if "branch_assignment_method" not in columns:
+    #         statements.append("ALTER TABLE loan_applications ADD COLUMN branch_assignment_method VARCHAR(20)")
+    #     if "assigned_loan_officer_id" not in columns:
+    #         statements.append("ALTER TABLE loan_applications ADD COLUMN assigned_loan_officer_id VARCHAR(36)")
+    #     if "county" not in columns:
+    #         statements.append("ALTER TABLE loan_applications ADD COLUMN county VARCHAR(50)")
 
 
     if "branches" in existing_tables:
@@ -148,6 +148,8 @@ def _migrate_schema() -> None:
             statements.append("ALTER TABLE ats_configurations ADD COLUMN ai_provider VARCHAR(20)")
         if "ai_model" not in columns:
             statements.append("ALTER TABLE ats_configurations ADD COLUMN ai_model VARCHAR(100)")
+        if "strictness" not in columns:
+            statements.append("ALTER TABLE ats_configurations ADD COLUMN strictness VARCHAR(20) DEFAULT 'balanced'")
 
     if "ats_screening_results" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("ats_screening_results")}
