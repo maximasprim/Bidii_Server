@@ -15,6 +15,8 @@ from app.models.branch import Branch
 from app.models.career_application import CareerApplication, CareerApplicationStatus
 from app.models.contact import ContactMessage
 from app.models.loan_application import LoanApplication, LoanApplicationStatus
+from app.models.ats import ATSAuditLog, ATSRecruiterNote, ATSScreeningResult
+from app.models.notification import NotificationLog
 from app.schemas.admin import (
     DashboardStats,
     LoanApplicationAssignRequest,
@@ -414,6 +416,43 @@ def update_career_application_status(
         maybe_auto_notify(db, record, record.status.value)
 
     return CareerApplicationRead.model_validate(record)
+
+
+@router.delete("/career-applications/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_career_application(application_id: str, db: Session = Depends(get_db)) -> None:
+    """
+    Hard delete, including everything that references this application by
+    FK - none of these have a DB-level ON DELETE CASCADE (see the ats.py
+    and notification.py model docstrings), so each dependent table is
+    cleared explicitly before the application row itself, same pattern as
+    delete_job's ATSConfiguration cleanup above:
+      - ats_screening_results (one row, unique per application)
+      - ats_recruiter_notes   (zero or more)
+      - ats_audit_log         (zero or more - the append-only ATS trail)
+      - notification_logs     (zero or more - candidate email history)
+    The CV in Supabase Storage is also removed, but that step is
+    best-effort: a storage hiccup shouldn't leave admins unable to delete
+    a record that's otherwise gone from the database.
+    """
+    record = db.query(CareerApplication).filter(CareerApplication.id == application_id).first()
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Career application not found.")
+
+    db.query(ATSAuditLog).filter(ATSAuditLog.application_id == application_id).delete()
+    db.query(ATSRecruiterNote).filter(ATSRecruiterNote.application_id == application_id).delete()
+    db.query(ATSScreeningResult).filter(ATSScreeningResult.application_id == application_id).delete()
+    db.query(NotificationLog).filter(NotificationLog.application_id == application_id).delete()
+    db.flush()  # avoid FK constraint violations when the application row itself is deleted
+
+    try:
+        supabase.storage.from_(BUCKET).remove([record.cv_stored_filename])
+    except Exception:
+        logger.exception("Failed to remove CV from Supabase Storage: %s", record.cv_stored_filename)
+
+    db.delete(record)
+    db.commit()
+
+    logger.info("Admin deleted career application %s and its dependent records", application_id)
 
 
 # @router.get("/career-applications/{application_id}/cv")
