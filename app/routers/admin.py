@@ -17,6 +17,7 @@ from app.models.contact import ContactMessage
 from app.models.loan_application import LoanApplication, LoanApplicationStatus
 from app.models.ats import ATSAuditLog, ATSRecruiterNote, ATSScreeningResult
 from app.models.notification import NotificationLog
+from app.models.product_routing import SUGGESTED_ROLE_FOR_PRODUCT
 from app.schemas.admin import (
     DashboardStats,
     LoanApplicationAssignRequest,
@@ -48,6 +49,19 @@ settings = get_settings()
 logger = logging.getLogger("bidii.admin")
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(get_current_admin)])
+
+# Every role that's an "individual application assignee" rather than a
+# branch-wide role: loan_officer (branch-tied, manually assignable) plus
+# every role SUGGESTED_ROLE_FOR_PRODUCT names as a per-product routing
+# target (check_off_agent, logbook_agent, rental_loan_agent,
+# sme_loan_agent, mobile_loan_agent, ...). Derived from
+# app/models/product_routing.py rather than listed out by hand here so
+# that adding a new routable product there automatically extends every
+# place in this file that needs to recognise its agent role too - see
+# list_loan_applications, _assert_can_touch_application, and the
+# assign-officer endpoint below, all of which used to each hard-code
+# their own copy of this tuple.
+AGENT_ROLES = ("loan_officer", *SUGGESTED_ROLE_FOR_PRODUCT.values())
 
 
 def _page_meta(page: int, page_size: int, total: int) -> PageMeta:
@@ -212,13 +226,17 @@ def list_loan_applications(
       them - this is a real, intentional behavior change from before,
       when a loan_officer saw every application with no scoping at all
       (there was no assignment concept yet to scope by).
+    - check_off_agent / logbook_agent / rental_loan_agent / sme_loan_agent
+      / mobile_loan_agent: same as loan_officer - only applications
+      routed directly to them via the "Loan Routing" admin page (see
+      app/services/product_routing.py).
     Any other role reaching here (shouldn't be possible given the menu
     gate above, but defaults matter) sees nothing, not everything.
     """
     query = db.query(LoanApplication)
     if current_admin.role == "branch_office_admin":
         query = query.filter(LoanApplication.assigned_branch_id.in_(current_admin.managed_branch_ids or []))
-    elif current_admin.role == "loan_officer":
+    elif current_admin.role in AGENT_ROLES:
         query = query.filter(LoanApplication.assigned_loan_officer_id == current_admin.id)
     elif current_admin.role != "admin":
         query = query.filter(False)  # noqa: E712 - safe default: unrecognised role sees nothing, not everything
@@ -248,7 +266,7 @@ def _assert_can_touch_application(record: LoanApplication, current_admin: AdminU
         if record.assigned_branch_id and record.assigned_branch_id in (current_admin.managed_branch_ids or []):
             return
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This application isn't in one of your managed branches.")
-    if current_admin.role == "loan_officer":
+    if current_admin.role in AGENT_ROLES:
         if record.assigned_loan_officer_id == current_admin.id:
             return
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This application isn't assigned to you.")
@@ -323,12 +341,19 @@ def assign_loan_application(
         record.assigned_loan_officer_id = None
 
     if payload.assigned_loan_officer_id is not None:
+        # loan_officer accounts are tied to one home branch, so they can
+        # only be manually assigned an application that's already routed
+        # to that same branch (checked below). The per-product agent
+        # roles (see AGENT_ROLES above) aren't branch-tied at all -
+        # they're the individual-person routing targets configured on
+        # the "Loan Routing" admin page (see app/services/product_routing.py) -
+        # so that branch check doesn't apply to them.
         officer = db.query(AdminUser).filter(
-            AdminUser.id == payload.assigned_loan_officer_id, AdminUser.role == "loan_officer"
+            AdminUser.id == payload.assigned_loan_officer_id, AdminUser.role.in_(AGENT_ROLES)
         ).first()
         if officer is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No loan officer with that id.")
-        if officer.branch_id != record.assigned_branch_id:
+        if officer.role == "loan_officer" and officer.branch_id != record.assigned_branch_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="That loan officer isn't based at this application's assigned branch.",
@@ -689,11 +714,15 @@ def update_admin_user(
 # from app.config import get_settings
 # from app.database import get_db
 # from app.models.admin_user import AdminUser
+# from app.models.branch import Branch
 # from app.models.career_application import CareerApplication, CareerApplicationStatus
 # from app.models.contact import ContactMessage
 # from app.models.loan_application import LoanApplication, LoanApplicationStatus
+# from app.models.ats import ATSAuditLog, ATSRecruiterNote, ATSScreeningResult
+# from app.models.notification import NotificationLog
 # from app.schemas.admin import (
 #     DashboardStats,
+#     LoanApplicationAssignRequest,
 #     PageMeta,
 #     PaginatedCareerApplications,
 #     PaginatedContacts,
@@ -712,7 +741,10 @@ def update_admin_user(
 # from app.schemas.career_application import CareerApplicationRead
 # from app.schemas.contact import ContactRead
 # from app.schemas.loan_application import LoanApplicationRead
-# from app.services.auth import get_current_admin, hash_password
+# from app.services.auth import get_current_admin, hash_password, require_roles
+# from app.services.loan_application_presenter import to_loan_application_read, to_loan_application_read_list
+# from app.services.notifications import maybe_auto_notify
+# from app.services.role_permissions import require_menu_access
 # from app.services.storage import supabase, BUCKET
 
 # settings = get_settings()
@@ -726,16 +758,44 @@ def update_admin_user(
 #     return PageMeta(page=page, page_size=page_size, total=total, total_pages=total_pages)
 
 
-# @router.get("/stats", response_model=DashboardStats)
-# def get_dashboard_stats(db: Session = Depends(get_db)) -> DashboardStats:
+# @router.get("/stats", response_model=DashboardStats, dependencies=[Depends(require_menu_access("/admin"))])
+# def get_dashboard_stats(
+#     db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)
+# ) -> DashboardStats:
+#     """
+#     admin/hr/marketing_manager see company-wide figures, unrestricted -
+#     unchanged from before. branch_office_admin and loan_officer see only
+#     their own branch's loan figures - contacts and career-application
+#     stats are zeroed out for them entirely, since those aren't areas
+#     either role has menu access to anyway (see DEFAULT_MENU_ACCESS) and
+#     showing them numbers for data they can't open would just be
+#     confusing, not useful.
+
+#     "Their own branch's loan figures" means: branch_office_admin sees
+#     every application across all of managed_branch_ids (their whole
+#     area), loan_officer sees every application at their single home
+#     branch (branch_id) - not narrowed further to only applications
+#     assigned to them personally. That's a deliberate difference from the
+#     Loan Applications list page, which does scope a loan_officer down to
+#     just their own assigned queue - the list is "what do I need to work
+#     on", the Overview here is "how is my branch doing", and those are
+#     reasonably different questions with different scopes.
+#     """
 #     seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
 
-#     total_contacts = db.query(func.count(ContactMessage.id)).scalar() or 0
-#     total_loans = db.query(func.count(LoanApplication.id)).scalar() or 0
-#     total_careers = db.query(func.count(CareerApplication.id)).scalar() or 0
+#     branch_scoped = current_admin.role in ("branch_office_admin", "loan_officer")
+#     loan_base = db.query(LoanApplication)
+#     if current_admin.role == "branch_office_admin":
+#         loan_base = loan_base.filter(LoanApplication.assigned_branch_id.in_(current_admin.managed_branch_ids or []))
+#     elif current_admin.role == "loan_officer":
+#         loan_base = loan_base.filter(LoanApplication.assigned_branch_id == current_admin.branch_id)
+
+#     total_contacts = 0 if branch_scoped else (db.query(func.count(ContactMessage.id)).scalar() or 0)
+#     total_loans = loan_base.with_entities(func.count(LoanApplication.id)).scalar() or 0
+#     total_careers = 0 if branch_scoped else (db.query(func.count(CareerApplication.id)).scalar() or 0)
 
 #     loan_status_rows = (
-#         db.query(LoanApplication.status, func.count(LoanApplication.id))
+#         loan_base.with_entities(LoanApplication.status, func.count(LoanApplication.id))
 #         .group_by(LoanApplication.status)
 #         .all()
 #     )
@@ -743,17 +803,20 @@ def update_admin_user(
 #     for s in LoanApplicationStatus:
 #         loan_by_status.setdefault(s.value, 0)
 
-#     career_status_rows = (
-#         db.query(CareerApplication.status, func.count(CareerApplication.id))
-#         .group_by(CareerApplication.status)
-#         .all()
-#     )
-#     career_by_status = {status_.value: count for status_, count in career_status_rows}
-#     for s in CareerApplicationStatus:
-#         career_by_status.setdefault(s.value, 0)
+#     if branch_scoped:
+#         career_by_status: dict[str, int] = {s.value: 0 for s in CareerApplicationStatus}
+#     else:
+#         career_status_rows = (
+#             db.query(CareerApplication.status, func.count(CareerApplication.id))
+#             .group_by(CareerApplication.status)
+#             .all()
+#         )
+#         career_by_status = {status_.value: count for status_, count in career_status_rows}
+#         for s in CareerApplicationStatus:
+#             career_by_status.setdefault(s.value, 0)
 
 #     product_rows = (
-#         db.query(
+#         loan_base.with_entities(
 #             LoanApplication.product_slug,
 #             LoanApplication.product_name,
 #             func.count(LoanApplication.id),
@@ -773,16 +836,23 @@ def update_admin_user(
 #     ]
 
 #     contacts_recent = (
-#         db.query(func.count(ContactMessage.id)).filter(ContactMessage.created_at >= seven_days_ago).scalar() or 0
+#         0
+#         if branch_scoped
+#         else (db.query(func.count(ContactMessage.id)).filter(ContactMessage.created_at >= seven_days_ago).scalar() or 0)
 #     )
 #     loans_recent = (
-#         db.query(func.count(LoanApplication.id)).filter(LoanApplication.created_at >= seven_days_ago).scalar() or 0
+#         loan_base.with_entities(func.count(LoanApplication.id))
+#         .filter(LoanApplication.created_at >= seven_days_ago)
+#         .scalar()
+#         or 0
 #     )
 #     careers_recent = (
-#         db.query(func.count(CareerApplication.id)).filter(CareerApplication.created_at >= seven_days_ago).scalar() or 0
+#         0
+#         if branch_scoped
+#         else (db.query(func.count(CareerApplication.id)).filter(CareerApplication.created_at >= seven_days_ago).scalar() or 0)
 #     )
 
-#     total_amount = db.query(func.sum(LoanApplication.amount)).scalar() or 0
+#     total_amount = loan_base.with_entities(func.sum(LoanApplication.amount)).scalar() or 0
 
 #     return DashboardStats(
 #         total_contacts=total_contacts,
@@ -821,15 +891,41 @@ def update_admin_user(
 #     )
 
 
-# @router.get("/loan-applications", response_model=PaginatedLoanApplications)
+# @router.get(
+#     "/loan-applications",
+#     response_model=PaginatedLoanApplications,
+#     dependencies=[Depends(require_menu_access("/admin/loan-applications"))],
+# )
 # def list_loan_applications(
 #     page: int = Query(1, ge=1),
 #     page_size: int = Query(20, ge=1, le=100),
 #     status_filter: str | None = Query(None, alias="status"),
 #     product_slug: str | None = None,
 #     db: Session = Depends(get_db),
+#     current_admin: AdminUser = Depends(get_current_admin),
 # ) -> PaginatedLoanApplications:
+#     """
+#     What a role sees here differs, since this same page/endpoint serves
+#     three different jobs (see app/services/role_permissions.py's comment
+#     on the "branch_office_admin" menu entry):
+#     - admin: every application, unrestricted - unchanged from before.
+#     - branch_office_admin: only applications routed to one of their
+#       managed_branch_ids - their inbox to triage and assign to officers.
+#     - loan_officer: only applications already assigned specifically to
+#       them - this is a real, intentional behavior change from before,
+#       when a loan_officer saw every application with no scoping at all
+#       (there was no assignment concept yet to scope by).
+#     Any other role reaching here (shouldn't be possible given the menu
+#     gate above, but defaults matter) sees nothing, not everything.
+#     """
 #     query = db.query(LoanApplication)
+#     if current_admin.role == "branch_office_admin":
+#         query = query.filter(LoanApplication.assigned_branch_id.in_(current_admin.managed_branch_ids or []))
+#     elif current_admin.role == "loan_officer":
+#         query = query.filter(LoanApplication.assigned_loan_officer_id == current_admin.id)
+#     elif current_admin.role != "admin":
+#         query = query.filter(False)  # noqa: E712 - safe default: unrecognised role sees nothing, not everything
+
 #     if status_filter:
 #         query = query.filter(LoanApplication.status == status_filter)
 #     if product_slug:
@@ -843,17 +939,40 @@ def update_admin_user(
 #     )
 #     return PaginatedLoanApplications(
 #         meta=_page_meta(page, page_size, total),
-#         items=[LoanApplicationRead.model_validate(i) for i in items],
+#         items=to_loan_application_read_list(db, items),
 #     )
 
 
-# @router.patch("/loan-applications/{application_id}", response_model=LoanApplicationRead)
+# def _assert_can_touch_application(record: LoanApplication, current_admin: AdminUser) -> None:
+#     """Shared guard for the status-update and assign endpoints below."""
+#     if current_admin.role == "admin":
+#         return
+#     if current_admin.role == "branch_office_admin":
+#         if record.assigned_branch_id and record.assigned_branch_id in (current_admin.managed_branch_ids or []):
+#             return
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This application isn't in one of your managed branches.")
+#     if current_admin.role == "loan_officer":
+#         if record.assigned_loan_officer_id == current_admin.id:
+#             return
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This application isn't assigned to you.")
+#     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted.")
+
+
+# @router.patch(
+#     "/loan-applications/{application_id}",
+#     response_model=LoanApplicationRead,
+#     dependencies=[Depends(require_menu_access("/admin/loan-applications"))],
+# )
 # def update_loan_application_status(
-#     application_id: str, payload: StatusUpdate, db: Session = Depends(get_db)
+#     application_id: str,
+#     payload: StatusUpdate,
+#     db: Session = Depends(get_db),
+#     current_admin: AdminUser = Depends(get_current_admin),
 # ) -> LoanApplicationRead:
 #     record = db.query(LoanApplication).filter(LoanApplication.id == application_id).first()
 #     if record is None:
 #         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan application not found.")
+#     _assert_can_touch_application(record, current_admin)
 
 #     valid_values = {s.value for s in LoanApplicationStatus}
 #     if payload.status not in valid_values:
@@ -865,7 +984,88 @@ def update_admin_user(
 #     record.status = LoanApplicationStatus(payload.status)
 #     db.commit()
 #     db.refresh(record)
-#     return LoanApplicationRead.model_validate(record)
+#     return to_loan_application_read(db, record)
+
+
+# @router.patch(
+#     "/loan-applications/{application_id}/assign",
+#     response_model=LoanApplicationRead,
+#     dependencies=[Depends(require_menu_access("/admin/loan-applications"))],
+# )
+# def assign_loan_application(
+#     application_id: str,
+#     payload: LoanApplicationAssignRequest,
+#     db: Session = Depends(get_db),
+#     current_admin: AdminUser = Depends(get_current_admin),
+# ) -> LoanApplicationRead:
+#     """
+#     Reassigns a loan application's branch and/or hands it to a specific
+#     loan officer. Only admin and branch_office_admin can call this -
+#     loan_officer accounts receive assignments, they don't make them.
+#     """
+#     if current_admin.role not in ("admin", "branch_office_admin"):
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted.")
+
+#     record = db.query(LoanApplication).filter(LoanApplication.id == application_id).first()
+#     if record is None:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan application not found.")
+#     _assert_can_touch_application(record, current_admin)
+
+#     if payload.assigned_branch_id is not None:
+#         branch = db.query(Branch).filter(Branch.id == payload.assigned_branch_id).first()
+#         if branch is None:
+#             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="branch_id doesn't match a real branch.")
+#         if current_admin.role == "branch_office_admin" and branch.id not in (current_admin.managed_branch_ids or []):
+#             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't manage that branch.")
+#         record.assigned_branch_id = branch.id
+#         record.branch_assignment_method = "manual"
+#         # Reassigning branch clears any existing officer assignment - an
+#         # officer at the old branch isn't a valid assignee at the new one,
+#         # and silently leaving it set would be a worse bug than requiring
+#         # a fresh assignment.
+#         record.assigned_loan_officer_id = None
+
+#     if payload.assigned_loan_officer_id is not None:
+#         officer = db.query(AdminUser).filter(
+#             AdminUser.id == payload.assigned_loan_officer_id, AdminUser.role == "loan_officer"
+#         ).first()
+#         if officer is None:
+#             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No loan officer with that id.")
+#         if officer.branch_id != record.assigned_branch_id:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="That loan officer isn't based at this application's assigned branch.",
+#             )
+#         record.assigned_loan_officer_id = officer.id
+
+#     db.commit()
+#     db.refresh(record)
+#     return to_loan_application_read(db, record)
+
+
+# @router.get(
+#     "/loan-applications/branch-officers",
+#     response_model=list[AdminUserRead],
+#     dependencies=[Depends(require_menu_access("/admin/loan-applications"))],
+# )
+# def list_branch_loan_officers(
+#     branch_id: str,
+#     db: Session = Depends(get_db),
+#     current_admin: AdminUser = Depends(get_current_admin),
+# ) -> list[AdminUserRead]:
+#     """Loan officers based at one branch — populates the assignment dropdown for that branch."""
+#     if current_admin.role == "branch_office_admin" and branch_id not in (current_admin.managed_branch_ids or []):
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't manage that branch.")
+#     if current_admin.role not in ("admin", "branch_office_admin"):
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted.")
+
+#     officers = (
+#         db.query(AdminUser)
+#         .filter(AdminUser.role == "loan_officer", AdminUser.branch_id == branch_id, AdminUser.is_active.is_(True))
+#         .order_by(AdminUser.username.asc())
+#         .all()
+#     )
+#     return [AdminUserRead.model_validate(o) for o in officers]
 
 
 # @router.get("/career-applications", response_model=PaginatedCareerApplications)
@@ -909,10 +1109,53 @@ def update_admin_user(
 #             detail=f"Status must be one of: {', '.join(sorted(valid_values))}",
 #         )
 
+#     previous_status = record.status
 #     record.status = CareerApplicationStatus(payload.status)
 #     db.commit()
 #     db.refresh(record)
+
+#     if record.status != previous_status:
+#         # Never allowed to fail this request - see maybe_auto_notify's docstring.
+#         maybe_auto_notify(db, record, record.status.value)
+
 #     return CareerApplicationRead.model_validate(record)
+
+
+# @router.delete("/career-applications/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+# def delete_career_application(application_id: str, db: Session = Depends(get_db)) -> None:
+#     """
+#     Hard delete, including everything that references this application by
+#     FK - none of these have a DB-level ON DELETE CASCADE (see the ats.py
+#     and notification.py model docstrings), so each dependent table is
+#     cleared explicitly before the application row itself, same pattern as
+#     delete_job's ATSConfiguration cleanup above:
+#       - ats_screening_results (one row, unique per application)
+#       - ats_recruiter_notes   (zero or more)
+#       - ats_audit_log         (zero or more - the append-only ATS trail)
+#       - notification_logs     (zero or more - candidate email history)
+#     The CV in Supabase Storage is also removed, but that step is
+#     best-effort: a storage hiccup shouldn't leave admins unable to delete
+#     a record that's otherwise gone from the database.
+#     """
+#     record = db.query(CareerApplication).filter(CareerApplication.id == application_id).first()
+#     if record is None:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Career application not found.")
+
+#     db.query(ATSAuditLog).filter(ATSAuditLog.application_id == application_id).delete()
+#     db.query(ATSRecruiterNote).filter(ATSRecruiterNote.application_id == application_id).delete()
+#     db.query(ATSScreeningResult).filter(ATSScreeningResult.application_id == application_id).delete()
+#     db.query(NotificationLog).filter(NotificationLog.application_id == application_id).delete()
+#     db.flush()  # avoid FK constraint violations when the application row itself is deleted
+
+#     try:
+#         supabase.storage.from_(BUCKET).remove([record.cv_stored_filename])
+#     except Exception:
+#         logger.exception("Failed to remove CV from Supabase Storage: %s", record.cv_stored_filename)
+
+#     db.delete(record)
+#     db.commit()
+
+#     logger.info("Admin deleted career application %s and its dependent records", application_id)
 
 
 # # @router.get("/career-applications/{application_id}/cv")
@@ -975,19 +1218,24 @@ def update_admin_user(
 
 
 # # ---------------------------------------------------------------------------
-# # Admin user management - lets a logged-in admin create additional admin
+# # Admin user management — lets a logged-in admin create additional admin
 # # accounts from the dashboard, instead of every admin sharing one set of
 # # env-var credentials.
 # # ---------------------------------------------------------------------------
 
 
-# @router.get("/users", response_model=AdminUserListResponse)
+# @router.get("/users", response_model=AdminUserListResponse, dependencies=[Depends(require_roles("admin"))])
 # def list_admin_users(db: Session = Depends(get_db)) -> AdminUserListResponse:
 #     users = db.query(AdminUser).order_by(AdminUser.created_at.asc()).all()
 #     return AdminUserListResponse(items=[AdminUserRead.model_validate(u) for u in users])
 
 
-# @router.post("/users", response_model=AdminUserCreateResponse, status_code=status.HTTP_201_CREATED)
+# @router.post(
+#     "/users",
+#     response_model=AdminUserCreateResponse,
+#     status_code=status.HTTP_201_CREATED,
+#     dependencies=[Depends(require_roles("admin"))],
+# )
 # def create_admin_user(
 #     payload: AdminUserCreate,
 #     db: Session = Depends(get_db),
@@ -1000,17 +1248,34 @@ def update_admin_user(
 #             detail=f'An admin with username "{payload.username}" already exists.',
 #         )
 
-#     user = AdminUser(username=payload.username, password_hash=hash_password(payload.password))
+#     if payload.branch_id is not None and not db.query(Branch).filter(Branch.id == payload.branch_id).first():
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="branch_id doesn't match a real branch.")
+#     if payload.managed_branch_ids:
+#         found = {b.id for b in db.query(Branch).filter(Branch.id.in_(payload.managed_branch_ids)).all()}
+#         missing = set(payload.managed_branch_ids) - found
+#         if missing:
+#             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown branch id(s): {', '.join(missing)}")
+
+#     user = AdminUser(
+#         username=payload.username,
+#         password_hash=hash_password(payload.password),
+#         role=payload.role,
+#         email=payload.email,
+#         branch_id=payload.branch_id,
+#         managed_branch_ids=payload.managed_branch_ids,
+#     )
 #     db.add(user)
 #     db.commit()
 #     db.refresh(user)
 
-#     logger.info("Admin user %r created a new admin account: %r", current_admin.username, user.username)
+#     logger.info(
+#         "Admin user %r created a new %s account: %r", current_admin.username, user.role, user.username
+#     )
 
 #     return AdminUserCreateResponse(data=AdminUserRead.model_validate(user))
 
 
-# @router.delete("/users/{user_id}", response_model=AdminUserRead)
+# @router.delete("/users/{user_id}", response_model=AdminUserRead, dependencies=[Depends(require_roles("admin"))])
 # def deactivate_admin_user(
 #     user_id: str,
 #     db: Session = Depends(get_db),
@@ -1039,7 +1304,7 @@ def update_admin_user(
 #     Shared by DELETE /users/{id} and PATCH /users/{id} (when it sets
 #     is_active=False) so both paths enforce the same lockout prevention:
 #     you can't deactivate yourself, and the last remaining active admin
-#     can't be deactivated by anyone. Compares by ID, not username - usernames
+#     can't be deactivated by anyone. Compares by ID, not username — usernames
 #     can change, IDs don't.
 #     """
 #     if user.id == current_admin.id:
@@ -1053,7 +1318,7 @@ def update_admin_user(
 #         )
 
 
-# @router.patch("/users/{user_id}", response_model=AdminUserUpdateResponse)
+# @router.patch("/users/{user_id}", response_model=AdminUserUpdateResponse, dependencies=[Depends(require_roles("admin"))])
 # def update_admin_user(
 #     user_id: str,
 #     payload: AdminUserUpdate,
@@ -1078,11 +1343,29 @@ def update_admin_user(
 #                 detail=f'An admin with username "{payload.username}" already exists.',
 #             )
 #         user.username = payload.username
-#         # No session-invalidation workaround needed here - the JWT subject
+#         # No session-invalidation workaround needed here — the JWT subject
 #         # is current_admin.id, which doesn't change when a username does.
 
 #     if payload.password is not None:
 #         user.password_hash = hash_password(payload.password)
+
+#     if payload.role is not None:
+#         user.role = payload.role
+
+#     if payload.email is not None:
+#         user.email = payload.email
+
+#     if payload.branch_id is not None:
+#         if not db.query(Branch).filter(Branch.id == payload.branch_id).first():
+#             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="branch_id doesn't match a real branch.")
+#         user.branch_id = payload.branch_id
+
+#     if payload.managed_branch_ids is not None:
+#         found = {b.id for b in db.query(Branch).filter(Branch.id.in_(payload.managed_branch_ids)).all()}
+#         missing = set(payload.managed_branch_ids) - found
+#         if missing:
+#             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown branch id(s): {', '.join(missing)}")
+#         user.managed_branch_ids = payload.managed_branch_ids
 
 #     if payload.is_active is not None and payload.is_active != user.is_active:
 #         if payload.is_active is False:

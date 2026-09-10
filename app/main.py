@@ -22,6 +22,7 @@ from app.routers import (
     admin_loan_tiers,
     admin_news,
     admin_notifications,
+    admin_product_routing,
     admin_role_permissions,
     branches,
     careers,
@@ -348,6 +349,7 @@ app.include_router(admin_role_permissions.router)
 app.include_router(admin_notifications.router)
 app.include_router(branches.router)
 app.include_router(admin_branches.router)
+app.include_router(admin_product_routing.router)
 
 # Self-contained admin dashboard (login, stats, submissions) - a static
 # HTML/CSS/JS page with no build step, served at /admin/. It talks to the

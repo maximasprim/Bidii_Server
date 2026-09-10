@@ -15,6 +15,7 @@ from app.services.branch_assignment import COVERED_COUNTIES, assign_branch
 from app.services.internal_notifications import notify_branch_of_new_application
 from app.services.loan_application_duplicate_check import find_pending_duplicate
 from app.services.loan_application_presenter import to_loan_application_read
+from app.services.product_routing import get_routed_admin, notify_routed_admin_of_new_application
 
 logger = logging.getLogger("bidii.loan_applications")
 
@@ -140,7 +141,24 @@ def submit_loan_application(
     if record.assigned_branch_id:
         branch = db.query(Branch).filter(Branch.id == record.assigned_branch_id).first()
         if branch:
-            # Never raises - see the function's own docstring.
-            notify_branch_of_new_application(db, branch_id=branch.id, branch_name=branch.name, application=record)
+            # TEMPORARY, admin-configurable override (see
+            # app/models/product_routing.py's docstring): if this product
+            # currently has one specific person assigned via the Loan
+            # Routing admin page, hand it straight to them - both the
+            # visible assignment (so it shows up in their queue and on
+            # the admin dashboard immediately, no manual reassignment
+            # step needed) and the notification - instead of the normal
+            # branch-office-admin fan-out. The branch itself is still
+            # computed and stored above exactly as normal either way.
+            routed_admin = get_routed_admin(db, record.product_slug)
+            if routed_admin is not None:
+                record.assigned_loan_officer_id = routed_admin.id
+                db.commit()
+                db.refresh(record)
+                # Never raises - see the function's own docstring.
+                notify_routed_admin_of_new_application(db, admin=routed_admin, application=record)
+            else:
+                # Never raises - see the function's own docstring.
+                notify_branch_of_new_application(db, branch_id=branch.id, branch_name=branch.name, application=record)
 
     return LoanApplicationCreateResponse(data=to_loan_application_read(db, record))

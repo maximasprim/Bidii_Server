@@ -3,7 +3,18 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-AdminRole = Literal["admin", "loan_officer", "hr", "marketing_manager", "branch_office_admin"]
+AdminRole = Literal[
+    "admin",
+    "loan_officer",
+    "hr",
+    "marketing_manager",
+    "branch_office_admin",
+    "check_off_agent",
+    "logbook_agent",
+    "rental_loan_agent",
+    "sme_loan_agent",
+    "mobile_loan_agent",
+]
 
 class AdminUserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=100)

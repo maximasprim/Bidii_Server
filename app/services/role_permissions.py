@@ -37,12 +37,23 @@ MENU_REGISTRY: list[tuple[str, str]] = [
     ("/admin/branches", "Branches"),
     ("/admin/users", "Admin Users"),
     ("/admin/role-permissions", "Roles & Permissions"),
+    ("/admin/loan-routing", "Loan Routing"),
 ]
 MENU_PATHS: set[str] = {path for path, _label in MENU_REGISTRY}
 
 # "admin" is deliberately absent - it always has every menu, is never
 # stored in the DB, and can't be edited via the settings endpoints below.
-CONFIGURABLE_ROLES = ["loan_officer", "hr", "marketing_manager", "branch_office_admin"]
+CONFIGURABLE_ROLES = [
+    "loan_officer",
+    "hr",
+    "marketing_manager",
+    "branch_office_admin",
+    "check_off_agent",
+    "logbook_agent",
+    "rental_loan_agent",
+    "sme_loan_agent",
+    "mobile_loan_agent",
+]
 ALL_ROLES = ["admin", *CONFIGURABLE_ROLES]
 
 # Same defaults as the frontend's DEFAULT_MENU_ACCESS in src/lib/roleAccess.ts.
@@ -51,6 +62,11 @@ DEFAULT_MENU_ACCESS: dict[str, list[str]] = {
     "hr": ["/admin", "/admin/career-applications", "/admin/ats", "/admin/jobs", "/admin/notifications"],
     "marketing_manager": ["/admin", "/admin/contacts", "/admin/news", "/admin/jobs"],
     "branch_office_admin": ["/admin", "/admin/loan-applications", "/admin/loan-terms"],
+    "check_off_agent": ["/admin/loan-applications"],
+    "logbook_agent": ["/admin/loan-applications"],
+    "rental_loan_agent": ["/admin/loan-applications"],
+    "sme_loan_agent": ["/admin/loan-applications"],
+    "mobile_loan_agent": ["/admin/loan-applications"],
 }
 
 
