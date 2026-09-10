@@ -339,6 +339,12 @@ def assign_loan_application(
         # and silently leaving it set would be a worse bug than requiring
         # a fresh assignment.
         record.assigned_loan_officer_id = None
+        # ...and if that leaves "assigned" pointing at nobody, revert to
+        # "pending" - only from "assigned" specifically, so a status staff
+        # already moved further (contacted/approved/declined) is never
+        # touched by a branch change.
+        if record.status == LoanApplicationStatus.assigned:
+            record.status = LoanApplicationStatus.pending
 
     if payload.assigned_loan_officer_id is not None:
         # loan_officer accounts are tied to one home branch, so they can
@@ -359,6 +365,11 @@ def assign_loan_application(
                 detail="That loan officer isn't based at this application's assigned branch.",
             )
         record.assigned_loan_officer_id = officer.id
+        # Only auto-promote from "pending" specifically - if staff already
+        # moved it to contacted/approved/declined, a (re)assignment
+        # shouldn't silently regress that progress back to "assigned".
+        if record.status == LoanApplicationStatus.pending:
+            record.status = LoanApplicationStatus.assigned
 
     db.commit()
     db.refresh(record)

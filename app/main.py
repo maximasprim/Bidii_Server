@@ -187,6 +187,66 @@ def _migrate_schema() -> None:
     logger.info("Applied %d schema migration statement(s): %s", len(statements), statements)
 
 
+def _migrate_loan_status_enum() -> None:
+    """
+    Adds the "assigned" LoanApplicationStatus value to the database.
+
+    On SQLite (local dev, this project's tests) the `status` column is a
+    plain VARCHAR with no DB-level constraint - the Python enum is the
+    only thing validating it, so a new member Just Works with no schema
+    change at all.
+
+    On Postgres (this project's real deployment - see .env's
+    DATABASE_URL), SQLAlchemy's Enum() type instead creates and uses a
+    real native ENUM TYPE, which Postgres enforces strictly: inserting or
+    updating a row to a value the type doesn't already know about fails
+    at the database level, no matter what the Python-side enum says. This
+    function is what actually makes "assigned" usable there.
+
+    Looks up the real enum type name from Postgres's own catalog rather
+    than assuming SQLAlchemy named it "loanapplicationstatus" (its
+    default, but a wrong guess here would either silently no-op against
+    a type that doesn't exist, or - worse - alter the wrong type), then
+    runs `ALTER TYPE ... ADD VALUE IF NOT EXISTS`, which Postgres 12+
+    supports directly and safely re-runs on every startup.
+
+    Wrapped so it can NEVER take the app down: this only unlocks one new
+    optional status value, so a real failure here (unreachable DB,
+    ancient Postgres without IF NOT EXISTS support, insufficient
+    privileges) should degrade to "the 'assigned' status doesn't work
+    yet" - loudly logged for a human to fix - never to "the whole app
+    won't start".
+    """
+    if engine.dialect.name != "postgresql":
+        return
+
+    from sqlalchemy import text
+
+    try:
+        with engine.connect() as conn:
+            enum_type_name = conn.execute(
+                text(
+                    "SELECT udt_name FROM information_schema.columns "
+                    "WHERE table_name = 'loan_applications' AND column_name = 'status'"
+                )
+            ).scalar()
+        if not enum_type_name:
+            return  # Table/column doesn't exist yet - Base.metadata.create_all above will have made it correctly already.
+
+        with engine.begin() as conn:
+            conn.execute(text(f'ALTER TYPE "{enum_type_name}" ADD VALUE IF NOT EXISTS \'assigned\''))
+        logger.info("Confirmed Postgres enum type %r includes 'assigned'.", enum_type_name)
+    except Exception:
+        logger.exception(
+            "Couldn't confirm/add the 'assigned' loan application status on Postgres - "
+            "that specific status value may not be settable until this is fixed. "
+            "Everything else is unaffected."
+        )
+
+
+_migrate_loan_status_enum()
+
+
 _migrate_schema()
 
 

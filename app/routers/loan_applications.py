@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.branch import Branch
-from app.models.loan_application import LoanApplication
+from app.models.loan_application import LoanApplication, LoanApplicationStatus
 from app.models.loan_tier import PRODUCT_NAMES, LoanTier
 from app.schemas.loan_application import (
     LoanApplicationCreate,
@@ -153,6 +153,11 @@ def submit_loan_application(
             routed_admin = get_routed_admin(db, record.product_slug)
             if routed_admin is not None:
                 record.assigned_loan_officer_id = routed_admin.id
+                # Brand new record, so status is always still the default
+                # "pending" at this point - this is the one unconditional
+                # pending -> assigned transition, since there's no prior
+                # manual status to accidentally override here.
+                record.status = LoanApplicationStatus.assigned
                 db.commit()
                 db.refresh(record)
                 # Never raises - see the function's own docstring.

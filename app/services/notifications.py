@@ -13,6 +13,13 @@ Called from: app/routers/admin.py (manual status update) and
 app/routers/admin_ats_screening.py (both auto-reject paths) - see each
 call site for why it's always called *after* the status-changing commit,
 never before.
+
+Called from: app/routers/careers.py (right after a new application is
+created, for the "received" trigger), app/routers/admin.py (manual
+status update), and app/routers/admin_ats_screening.py (both
+auto-reject paths) - see each call site for why it's always called
+*after* the status-changing (or, for careers.py, the initial) commit,
+never before.
 """
 
 import logging

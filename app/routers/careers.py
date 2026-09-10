@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.career_application import CareerApplication
 from app.models.job_opening import JobOpening
 from app.schemas.career_application import CareerApplicationCreateResponse, CareerApplicationRead
+from app.services.notifications import maybe_auto_notify 
 from app.services.storage import supabase, BUCKET
 
 logger = logging.getLogger("bidii.careers")
@@ -133,5 +134,7 @@ async def submit_career_application(
     db.refresh(record)
 
     logger.info("New career application from %s <%s> for role=%s", full_name, validated_email, resolved_role)
+
+    maybe_auto_notify(db, record, record.status.value)
 
     return CareerApplicationCreateResponse(data=CareerApplicationRead.model_validate(record))

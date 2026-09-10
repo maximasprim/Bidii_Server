@@ -10,6 +10,7 @@ from app.database import Base
 
 class LoanApplicationStatus(str, enum.Enum):
     pending = "pending"
+    assigned = "assigned"
     contacted = "contacted"
     approved = "approved"
     declined = "declined"
