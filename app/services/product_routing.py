@@ -60,7 +60,9 @@ def notify_routed_admin_of_new_application(db: Session, *, admin: AdminUser, app
     In-app notification + email to the one person a product is routed
     to - the single-recipient equivalent of
     notify_branch_of_new_application, reusing the same
-    InternalNotification/email_sender plumbing. Never raises.
+    InternalNotification/email_sender plumbing (including its "loans"
+    SMTP identity, kind="loans" - see app/config.py's SMTP_LOANS_*
+    settings). Never raises.
     """
     try:
         notify(
@@ -80,7 +82,7 @@ def notify_routed_admin_of_new_application(db: Session, *, admin: AdminUser, app
         )
         return  # don't attempt email off the back of a failed in-app notification
 
-    if not admin.email or not is_email_configured():
+    if not admin.email or not is_email_configured(kind="loans"):
         return
 
     settings = get_settings()
@@ -99,7 +101,7 @@ def notify_routed_admin_of_new_application(db: Session, *, admin: AdminUser, app
         f"{settings.company_name} System."
     )
     try:
-        send_email(to_email=admin.email, subject=subject, body_text=body)
+        send_email(to_email=admin.email, subject=subject, body_text=body, kind="loans")
     except EmailError as exc:
         logger.warning("Failed to email routed-application notice to %r: %s", admin.email, exc)
     except Exception:  # noqa: BLE001 - must never break the submission

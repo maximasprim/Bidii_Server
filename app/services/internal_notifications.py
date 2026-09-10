@@ -6,9 +6,11 @@ for why this is a separate system from the candidate-facing email one
 New loan applications ALSO get emailed to whichever admins receive the
 in-app notification below, if they have a work email on file and SMTP is
 configured - see _email_recipients. This reuses the same
-app/services/email_sender.py used for candidate emails, but isn't part of
-that template/automation system - it's a fixed, internal ops
-notification, not a candidate-facing communication.
+app/services/email_sender.py used for candidate emails, but sends via
+its "loans" identity (kind="loans") rather than the candidate one, so it
+can go out from a separate mailbox - see app/config.py's SMTP_LOANS_*
+settings. It also isn't part of the template/automation system - it's a
+fixed, internal ops notification, not a candidate-facing communication.
 """
 
 import logging
@@ -76,11 +78,11 @@ def notify_branch_of_new_application(db: Session, *, branch_id: str, branch_name
 
 
 def _email_recipients(recipients: list[AdminUser], *, branch_name: str, application) -> None:
-    if not is_email_configured():
+    if not is_email_configured(kind="loans"):
         return
 
     settings = get_settings()
-    subject = f"New loan application — {branch_name}"
+    subject = f"New loan application - {branch_name}"
     body = (
         f"Hi,\n\n"
         f"A new loan application has been routed to {branch_name} branch.\n\n"
@@ -99,7 +101,7 @@ def _email_recipients(recipients: list[AdminUser], *, branch_name: str, applicat
         if not admin.email:
             continue
         try:
-            send_email(to_email=admin.email, subject=subject, body_text=body)
+            send_email(to_email=admin.email, subject=subject, body_text=body, kind="loans")
         except EmailError as exc:
             logger.warning("Failed to email branch-notification to %r: %s", admin.email, exc)
         except Exception:  # noqa: BLE001 - one recipient's failure must never stop the rest, or the caller
