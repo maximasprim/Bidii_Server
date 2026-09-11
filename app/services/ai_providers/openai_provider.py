@@ -10,6 +10,7 @@ from app.services.ai_providers.base import (
     AIEvaluationResult,
     AIFormalJDDraft,
     AIGeocodeResult,
+    AIInterviewPrepDraft,
     AIJobDraft,
     AIProvider,
     AIProviderError,
@@ -23,18 +24,21 @@ from app.services.ai_providers.prompts import (
     EVALUATION_SYSTEM_PROMPT,
     FORMAL_JD_SYSTEM_PROMPT,
     GEOCODE_SYSTEM_PROMPT,
+    INTERVIEW_PREP_SYSTEM_PROMPT,
     JOB_GENERATION_SYSTEM_PROMPT,
     build_branch_match_prompt,
     build_criteria_suggestion_prompt,
     build_evaluation_prompt,
     build_formal_jd_prompt,
     build_geocode_prompt,
+    build_interview_prep_prompt,
     build_job_generation_prompt,
     parse_branch_match_response,
     parse_criteria_suggestion_response,
     parse_evaluation_response,
     parse_formal_jd_response,
     parse_geocode_response,
+    parse_interview_prep_response,
     parse_job_draft_response,
 )
 
@@ -122,6 +126,13 @@ class OpenAIProvider(AIProvider):
             system_prompt=FORMAL_JD_SYSTEM_PROMPT, user_prompt=prompt, model=model, timeout_seconds=timeout_seconds
         )
         return parse_formal_jd_response(raw, provider=self.name, model=model or DEFAULT_MODEL)
+
+    def generate_interview_prep(self, *, job_context, candidate_context, model, timeout_seconds) -> AIInterviewPrepDraft:
+        prompt = build_interview_prep_prompt(job_context, candidate_context)
+        raw = self._complete_json(
+            system_prompt=INTERVIEW_PREP_SYSTEM_PROMPT, user_prompt=prompt, model=model, timeout_seconds=timeout_seconds
+        )
+        return parse_interview_prep_response(raw, provider=self.name, model=model or DEFAULT_MODEL)
 
     def suggest_nearest_branch(self, *, location_text, branches, model, timeout_seconds) -> AIBranchMatch:
         prompt = build_branch_match_prompt(location_text, branches)

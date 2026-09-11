@@ -18,6 +18,7 @@ from app.routers import (
     admin_auth,
     admin_branches,
     admin_jobs,
+    admin_interview_prep,
     admin_internal_notifications,
     admin_loan_tiers,
     admin_news,
@@ -123,6 +124,8 @@ def _migrate_schema() -> None:
             statements.append("ALTER TABLE career_applications ADD COLUMN desired_pay VARCHAR(100)")
         if "location" not in columns:
             statements.append("ALTER TABLE career_applications ADD COLUMN location VARCHAR(200)")
+        if "interview_prep_content" not in columns:
+            statements.append("ALTER TABLE career_applications ADD COLUMN interview_prep_content JSON")
 
     if "branches" in existing_tables:
         columns = {c["name"] for c in inspector.get_columns("branches")}
@@ -398,6 +401,7 @@ app.include_router(sitemap.router)
 app.include_router(admin_news.router)
 app.include_router(jobs.router)
 app.include_router(admin_jobs.router)
+app.include_router(admin_interview_prep.router)
 app.include_router(admin_internal_notifications.router)
 app.include_router(loan_tiers.router)
 app.include_router(admin_loan_tiers.router)

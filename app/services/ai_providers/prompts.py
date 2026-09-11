@@ -16,6 +16,7 @@ from app.services.ai_providers.base import (
     AIEvaluationResult,
     AIFormalJDDraft,
     AIGeocodeResult,
+    AIInterviewPrepDraft,
     AIJobDraft,
     AIProviderInvalidResponseError,
     AIRequirementOutcome,
@@ -563,6 +564,109 @@ def parse_formal_jd_response(raw: str, provider: str, model: str) -> AIFormalJDD
         relationship_management=relationship_management,
         minimum_qualifications=minimum_qualifications,
         experience_and_skills=experience_and_skills,
+        provider=provider,
+        model=model,
+    )
+
+
+INTERVIEW_PREP_SYSTEM_PROMPT = (
+    "You are a recruitment interview coach for Bidii Credit, a Kenyan lending company. Given one job "
+    "posting and one specific candidate's application (their cover note and, where available, "
+    "extracted CV text), you help the interview panel prepare for THIS candidate: a short factual "
+    "summary of them relative to this specific role, their key strengths to acknowledge, specific "
+    "areas the panel should probe further (gaps, ambiguities, or claims worth verifying - never "
+    "speculation about character or motive), and a set of role-specific/technical interview "
+    "questions tailored to this candidate and this job. The panel already asks every candidate for "
+    "every role a fixed set of standard HR, competency, and panel-fit questions - do NOT repeat "
+    "generic questions like those; focus only on what's specific to this candidate and this job. "
+    "Return ONLY a JSON object matching the exact schema given - no prose, no markdown fences, no "
+    "commentary outside the JSON. This is a DRAFT for a human interviewer to review and edit before "
+    "the interview - it is never used to make a hiring decision automatically, and every claim you "
+    "make about the candidate must be grounded in their actual cover note/CV text, never invented."
+)
+
+INTERVIEW_PREP_JSON_SCHEMA_HINT = """
+Return exactly this JSON shape:
+{
+  "candidate_summary": "<2-4 sentence factual summary of this candidate relative to this specific role, based only on their cover note/CV>",
+  "key_strengths": ["<specific strength 1, tied to something concrete in their application>", ...],
+  "areas_to_probe": ["<specific gap, ambiguity, or claim worth verifying in the interview>", ...],
+  "role_specific_questions": [
+    {
+      "question": "<a role-specific or technical interview question tailored to this candidate and this job>",
+      "why_it_matters": "<one short sentence on what a strong answer would demonstrate>"
+    }
+  ]
+}
+Guidance:
+- key_strengths: 2-5 items, each grounded in something concrete from the cover note/CV.
+- areas_to_probe: 2-5 items. Be specific and factual - note only what the application does or
+  doesn't show (e.g. a claimed skill with no supporting example, a gap in employment history, an
+  unclear reason for leaving a previous role) - never speculate about the candidate's character,
+  honesty, or motives.
+- role_specific_questions: 5-8 items, tailored to the job's actual requirements/responsibilities
+  and to specifics in the candidate's own cover note/CV - never generic questions any candidate for
+  any role could be asked (those are already covered by the panel's fixed standard questions).
+- If CV text isn't available, base everything on the cover note alone and don't treat the CV's
+  absence itself as a weakness.
+"""
+
+
+def build_interview_prep_prompt(job_context: dict, candidate_context: dict) -> str:
+    cv_text = candidate_context.get("cv_text")
+    cv_section = (
+        f"CANDIDATE CV TEXT (extracted from their uploaded CV):\n{cv_text}\n"
+        if cv_text
+        else "CANDIDATE CV TEXT: not available (couldn't be extracted) - prepare using the cover note only, "
+        "and don't treat this absence itself as a weakness.\n"
+    )
+    return f"""JOB POSTING
+Title: {job_context.get('title')}
+Department: {job_context.get('department')}
+Location: {job_context.get('location')}
+Employment type: {job_context.get('employment_type')}
+Description: {job_context.get('description')}
+Responsibilities:
+{_bullet_list(job_context.get('responsibilities') or [])}
+Requirements / qualifications / skills / experience / eligibility:
+{_bullet_list(job_context.get('requirements') or [])}
+
+CANDIDATE
+Role applied for: {candidate_context.get('role_applied_for')}
+Cover note:
+{candidate_context.get('cover_note') or '(none provided)'}
+
+{cv_section}
+{INTERVIEW_PREP_JSON_SCHEMA_HINT}"""
+
+
+def parse_interview_prep_response(raw: str, provider: str, model: str) -> AIInterviewPrepDraft:
+    try:
+        data = json.loads(_strip_json_fences(raw))
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise AIProviderInvalidResponseError(f"{provider} did not return valid JSON: {exc}") from exc
+
+    try:
+        candidate_summary = str(data["candidate_summary"]).strip()
+        key_strengths = [str(s).strip() for s in data.get("key_strengths", []) if str(s).strip()]
+        areas_to_probe = [str(a).strip() for a in data.get("areas_to_probe", []) if str(a).strip()]
+        role_specific_questions = []
+        for item in data.get("role_specific_questions", []):
+            question = str(item.get("question", "")).strip()
+            why_it_matters = str(item.get("why_it_matters", "")).strip()
+            if not question:
+                continue
+            role_specific_questions.append({"question": question, "why_it_matters": why_it_matters})
+        if not candidate_summary or not role_specific_questions:
+            raise ValueError("missing candidate_summary or role_specific_questions")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise AIProviderInvalidResponseError(f"{provider} returned JSON with an unexpected shape: {exc}") from exc
+
+    return AIInterviewPrepDraft(
+        candidate_summary=candidate_summary,
+        key_strengths=key_strengths,
+        areas_to_probe=areas_to_probe,
+        role_specific_questions=role_specific_questions,
         provider=provider,
         model=model,
     )

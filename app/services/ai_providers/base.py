@@ -155,6 +155,28 @@ class AIFormalJDDraft:
 
 
 @dataclass
+class AIInterviewPrepDraft:
+    """
+    Structured draft of the AI-generated portion of a candidate's
+    interview prep sheet (see app/schemas/interview_prep.py). Does NOT
+    include the three fixed standard sections (HR & Background,
+    Competency & Situational, Panel Assessment & Fit) - those are never
+    AI-generated, see app/services/interview_prep_generation.py's
+    STANDARD_INTERVIEW_SECTIONS. Never saved automatically: the router
+    only returns this for an admin to review/edit before it's saved to
+    CareerApplication.interview_prep_content and, from there, rendered to
+    PDF - same "AI drafts, human saves" pattern as AIFormalJDDraft above.
+    """
+
+    candidate_summary: str
+    key_strengths: list[str] = field(default_factory=list)
+    areas_to_probe: list[str] = field(default_factory=list)
+    role_specific_questions: list[dict] = field(default_factory=list)  # [{question, why_it_matters}]
+    provider: str = ""
+    model: str = ""
+
+    
+@dataclass
 class AIBranchMatch:
     """
     Result of asking the AI which of the company's active branches is the
@@ -231,6 +253,11 @@ class AIProvider(ABC):
     @abstractmethod
     def generate_formal_jd(self, *, job_context: dict, model: str, timeout_seconds: int) -> AIFormalJDDraft: ...
 
+    @abstractmethod
+    def generate_interview_prep(
+        self, *, job_context: dict, candidate_context: dict, model: str, timeout_seconds: int
+    ) -> AIInterviewPrepDraft: ...
+    
     @abstractmethod
     def suggest_nearest_branch(
         self, *, location_text: str, branches: list[dict], model: str, timeout_seconds: int

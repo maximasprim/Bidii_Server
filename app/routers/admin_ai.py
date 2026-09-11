@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.admin_user import AdminUser
+from app.models.career_application import CareerApplication
 from app.models.job_opening import JobOpening
 from app.schemas.ats import (
     AICriteriaGenerateRequest,
@@ -29,12 +30,24 @@ from app.schemas.ats import (
     ATSAIProvidersResponse,
     ATSAIProviderStatus,
 )
+from app.schemas.interview_prep import (
+    InterviewPrepContent,
+    InterviewPrepGenerateRequest,
+    InterviewPrepGenerateResponse,
+    InterviewPrepQuestion,
+    InterviewPrepSection,
+)
 from app.schemas.job_description import JDContent, JDGenerateRequest, JDGenerateResponse, JDKeyResponsibility
 from app.services.ai_criteria_suggestion import suggest_criteria_with_ai
 from app.services.ai_job_generation import generate_job_draft_with_ai
 from app.services.ai_providers.base import AIProviderError, AIProviderNotConfiguredError
 from app.services.ai_providers.factory import default_model_for, provider_status
 from app.services.auth import get_current_admin
+from app.services.interview_prep_generation import (
+    ROLE_SPECIFIC_SECTION_TITLE,
+    build_standard_sections,
+    generate_interview_prep_with_ai,
+)
 from app.services.jd_generation import generate_formal_jd_with_ai
 
 logger = logging.getLogger("bidii.admin_ai")
@@ -188,6 +201,68 @@ def generate_formal_jd(
         experience_and_skills=draft.experience_and_skills,
     )
     return JDGenerateResponse(data=data, provider=draft.provider, model=draft.model)
+
+
+@router.post(
+    "/career-applications/{application_id}/interview-prep/generate", response_model=InterviewPrepGenerateResponse
+)
+def generate_interview_prep(
+    application_id: str,
+    payload: InterviewPrepGenerateRequest,
+    db: Session = Depends(get_db),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> InterviewPrepGenerateResponse:
+    """
+    Drafts a candidate-specific interview prep sheet for one application
+    (see app/schemas/interview_prep.py and
+    app/services/interview_prep_generation.py). Returns the draft only -
+    nothing is written to CareerApplication.interview_prep_content here;
+    the admin reviews/edits it on the frontend and saves it via
+    PUT /api/admin/career-applications/{application_id}/interview-prep
+    (see admin_interview_prep.py), exactly the same "AI drafts, human
+    saves" pattern as generate_formal_jd above. The three standard
+    sections (see build_standard_sections) are always included alongside
+    whatever the AI drafts - they're fixed, not AI-generated.
+    """
+    application = db.query(CareerApplication).filter(CareerApplication.id == application_id).first()
+    if application is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Career application not found.")
+    job = (
+        db.query(JobOpening).filter(JobOpening.id == application.job_id).first()
+        if application.job_id
+        else None
+    )
+
+    model = payload.model or default_model_for(payload.provider.value)
+    try:
+        draft = generate_interview_prep_with_ai(
+            job=job, application=application, provider_name=payload.provider.value, model=model
+        )
+    except AIProviderNotConfiguredError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except AIProviderError as exc:
+        logger.warning("AI interview prep generation failed for application %r: %s", application_id, exc)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    logger.info(
+        "Admin %r generated an AI interview prep draft for application %r via %s",
+        current_admin.username,
+        application_id,
+        draft.provider,
+    )
+    data = InterviewPrepContent(
+        candidate_summary=draft.candidate_summary,
+        key_strengths=draft.key_strengths,
+        areas_to_probe=draft.areas_to_probe,
+        sections=[
+            *[InterviewPrepSection(**section) for section in build_standard_sections()],
+            InterviewPrepSection(
+                title=ROLE_SPECIFIC_SECTION_TITLE,
+                questions=[InterviewPrepQuestion(**q) for q in draft.role_specific_questions],
+            ),
+        ],
+    )
+    return InterviewPrepGenerateResponse(data=data, provider=draft.provider, model=draft.model)
 
 
 # """
