@@ -11,6 +11,11 @@ its "loans" identity (kind="loans") rather than the candidate one, so it
 can go out from a separate mailbox - see app/config.py's SMTP_LOANS_*
 settings. It also isn't part of the template/automation system - it's a
 fixed, internal ops notification, not a candidate-facing communication.
+
+notify_officer_of_manual_assignment below covers the other side of this:
+an admin manually (re)assigning an *existing* application to an agent via
+the Loan Applications page, rather than the system routing a *new* one -
+see app/routers/admin.py's assign_loan_application.
 """
 
 import logging
@@ -77,6 +82,67 @@ def notify_branch_of_new_application(db: Session, *, branch_id: str, branch_name
     _email_recipients(recipients, branch_name=branch_name, application=application)
 
 
+def notify_officer_of_manual_assignment(db: Session, *, officer: AdminUser, application, assigned_by: AdminUser) -> None:
+    """
+    In-app notification + email to whichever agent gets (re)assigned a
+    loan application via PATCH /api/admin/loan-applications/{id}/assign
+    (see app/routers/admin.py's assign_loan_application). Fires on every
+    (re)assignment made through that endpoint - including handing an
+    application that already had a different officer to someone else -
+    since the newly assigned person always needs to know it's now
+    theirs, regardless of whether it's their first time seeing it or a
+    handover. Same "in-app first, commit, then a best-effort email
+    second - never raises" pattern as notify_branch_of_new_application
+    above and notify_routed_admin_of_new_application in
+    app/services/product_routing.py (which this mirrors closely - kept
+    separate because this one is about a specific admin's manual action
+    on an application that already exists, not a product's fixed
+    auto-routing target).
+    """
+    try:
+        notify(
+            db,
+            recipient_admin_id=officer.id,
+            message=f"{application.product_name} application from {application.full_name} was assigned to you by {assigned_by.username}.",
+            link_path="/admin/loan-applications",
+            related_loan_application_id=application.id,
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 - must never break the assignment that triggered this
+        db.rollback()
+        logger.exception(
+            "Failed to create in-app notification for manual assignment of application %r -> officer %r",
+            getattr(application, "id", None),
+            officer.id,
+        )
+        return  # don't attempt email off the back of a failed in-app notification
+
+    if not officer.email or not is_email_configured(kind="loans"):
+        return
+
+    settings = get_settings()
+    subject = f"{application.product_name} application assigned to you"
+    body = (
+        f"Hi {officer.username},\n\n"
+        f"{assigned_by.username} has assigned you a {application.product_name} application.\n\n"
+        f"Applicant: {application.full_name}\n"
+        f"Phone: {application.phone}\n"
+        f"Plan: {application.tier_label}\n"
+        f"Amount requested: KES {application.amount:,.0f}\n"
+        f"Location: {application.location or 'Not provided'}\n\n"
+        f"Log in to the admin dashboard to review it:\n"
+        f"{settings.site_url}/admin/loan-applications\n\n"
+        f"Best regards,\n"
+        f"{settings.company_name} System."
+    )
+    try:
+        send_email(to_email=officer.email, subject=subject, body_text=body, kind="loans")
+    except EmailError as exc:
+        logger.warning("Failed to email manual-assignment notice to %r: %s", officer.email, exc)
+    except Exception:  # noqa: BLE001 - one recipient's failure must never stop the rest, or the caller
+        logger.exception("Unexpected error emailing manual-assignment notice to %r", officer.email)
+
+        
 def _email_recipients(recipients: list[AdminUser], *, branch_name: str, application) -> None:
     if not is_email_configured(kind="loans"):
         return

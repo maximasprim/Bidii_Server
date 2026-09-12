@@ -40,6 +40,7 @@ from app.schemas.career_application import CareerApplicationRead
 from app.schemas.contact import ContactRead
 from app.schemas.loan_application import LoanApplicationRead
 from app.services.auth import get_current_admin, hash_password, require_roles
+from app.services.internal_notifications import notify_officer_of_manual_assignment
 from app.services.loan_application_presenter import to_loan_application_read, to_loan_application_read_list
 from app.services.notifications import maybe_auto_notify
 from app.services.role_permissions import require_menu_access
@@ -346,6 +347,7 @@ def assign_loan_application(
         if record.status == LoanApplicationStatus.assigned:
             record.status = LoanApplicationStatus.pending
 
+    officer: AdminUser | None = None
     if payload.assigned_loan_officer_id is not None:
         # loan_officer accounts are tied to one home branch, so they can
         # only be manually assigned an application that's already routed
@@ -373,6 +375,17 @@ def assign_loan_application(
 
     db.commit()
     db.refresh(record)
+
+    # Fires on every manual (re)assignment made through this endpoint -
+    # see notify_officer_of_manual_assignment's own docstring for why
+    # this always happens after the commit above, same ordering as
+    # notify_branch_of_new_application/notify_routed_admin_of_new_application
+    # in app/routers/loan_applications.py. Never raises, so a
+    # notification failure (or SMTP not being configured) never turns a
+    # successful assignment into a failed request.
+    if officer is not None:
+        notify_officer_of_manual_assignment(db, officer=officer, application=record, assigned_by=current_admin)
+
     return to_loan_application_read(db, record)
 
 
@@ -386,18 +399,41 @@ def list_branch_loan_officers(
     db: Session = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin),
 ) -> list[AdminUserRead]:
-    """Loan officers based at one branch — populates the assignment dropdown for that branch."""
+    """
+    Populates the "Loan Officer" assignment dropdown on the Loan
+    Applications page. Two things changed here from the original
+    "loan_officer at this branch only" version:
+
+    1. Every agent role, not just loan_officer, is now eligible -
+       AGENT_ROLES (see top of this file) also covers check_off_agent /
+       logbook_agent / rental_loan_agent / sme_loan_agent /
+       mobile_loan_agent, the per-product routing roles added later. A
+       loan can legitimately be handled by any of these, not only a
+       branch-tied loan_officer.
+    2. For "admin" (unrestricted) callers, branch_id is no longer used to
+       filter the result at all - it's still required as a query param
+       (existing callers keep sending the row's branch as before, and
+       branch_office_admin's scoping below still needs it), but for
+       "admin" every active agent, at any branch or none, is returned.
+       This matters because the product-agent roles above are typically
+       assigned per-product rather than per-branch (see
+       app/models/product_routing.py) - most have branch_id = NULL and
+       would never appear in a branch-filtered list - and because an
+       admin manually backfilling assignment on applications submitted
+       before this routing existed needs to be able to pick ANY agent,
+       not just ones who happen to share that one application's branch.
+       branch_office_admin keeps the narrower, branch-scoped view: their
+       role is inherently about one branch's inbox, not the whole roster.
+    """
     if current_admin.role == "branch_office_admin" and branch_id not in (current_admin.managed_branch_ids or []):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't manage that branch.")
     if current_admin.role not in ("admin", "branch_office_admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted.")
 
-    officers = (
-        db.query(AdminUser)
-        .filter(AdminUser.role == "loan_officer", AdminUser.branch_id == branch_id, AdminUser.is_active.is_(True))
-        .order_by(AdminUser.username.asc())
-        .all()
-    )
+    query = db.query(AdminUser).filter(AdminUser.role.in_(AGENT_ROLES), AdminUser.is_active.is_(True))
+    if current_admin.role == "branch_office_admin":
+        query = query.filter(AdminUser.branch_id == branch_id)
+    officers = query.order_by(AdminUser.role.asc(), AdminUser.username.asc()).all()
     return [AdminUserRead.model_validate(o) for o in officers]
 
 
