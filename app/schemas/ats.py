@@ -2,7 +2,15 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.ats import ATSAIProviderName, ATSAuditAction, ATSCriterionCategory, ATSEvaluationMode, ATSRecommendation, ATSStrictness
+from app.models.ats import (
+    ATSAIProviderName,
+    ATSAuditAction,
+    ATSBatchJobStatus,
+    ATSCriterionCategory,
+    ATSEvaluationMode,
+    ATSRecommendation,
+    ATSStrictness,
+)
 from app.schemas.admin import PageMeta
 from app.schemas.career_application import CareerApplicationRead
 from app.schemas.job_opening import JobOpeningRead
@@ -180,6 +188,37 @@ class ATSScreenAllResponse(BaseModel):
     failed: list[dict] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# Async batch screening (POST .../screen-all/async + its status endpoint)
+# ---------------------------------------------------------------------------
+
+
+class ATSBatchJobStartResponse(BaseModel):
+    """Returned immediately by the async kickoff - the batch itself keeps
+    running in the background; poll ATSBatchJobStatusResponse for progress."""
+
+    success: bool = True
+    batch_job_id: str
+    total: int
+    message: str
+
+
+class ATSBatchJobStatusResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    job_id: str
+    status: ATSBatchJobStatus
+    total: int
+    completed: int
+    failed_count: int
+    cancel_requested: bool = False
+    stopped_reason: str | None = None
+    failures: list[dict] = Field(default_factory=list)
+    created_at: datetime
+    finished_at: datetime | None = None
+
+    
 # ---------------------------------------------------------------------------
 # Candidate list (career applications enriched with ATS data)
 # ---------------------------------------------------------------------------

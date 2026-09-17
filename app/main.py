@@ -250,6 +250,54 @@ def _migrate_loan_status_enum() -> None:
 _migrate_loan_status_enum()
 
 
+def _migrate_ats_audit_action_enum() -> None:
+    """
+    Adds the 'ai_evaluation_failed' and 'ai_fallback_to_weighted'
+    ATSAuditAction values to the database - same situation, and same fix,
+    as _migrate_loan_status_enum above: on Postgres this column is a real
+    native ENUM TYPE, so a value the Python model knows about but the DB
+    type doesn't causes every insert using it to fail outright (and, since
+    that insert normally shares a transaction with the actual screening
+    result, takes the whole commit down with it - not just the audit log
+    entry). See that function's docstring for the full rationale; this is
+    the same approach applied to app.models.ats.ATSAuditAction instead of
+    LoanApplicationStatus.
+    """
+    if engine.dialect.name != "postgresql":
+        return
+ 
+    from sqlalchemy import text
+ 
+    try:
+        with engine.connect() as conn:
+            enum_type_name = conn.execute(
+                text(
+                    "SELECT udt_name FROM information_schema.columns "
+                    "WHERE table_name = 'ats_audit_log' AND column_name = 'action'"
+                )
+            ).scalar()
+        if not enum_type_name:
+            return  # Table/column doesn't exist yet - Base.metadata.create_all above will have made it correctly already.
+ 
+        with engine.begin() as conn:
+            conn.execute(text(f'ALTER TYPE "{enum_type_name}" ADD VALUE IF NOT EXISTS \'ai_evaluation_failed\''))
+        with engine.begin() as conn:
+            conn.execute(text(f'ALTER TYPE "{enum_type_name}" ADD VALUE IF NOT EXISTS \'ai_fallback_to_weighted\''))
+        logger.info(
+            "Confirmed Postgres enum type %r includes 'ai_evaluation_failed' and 'ai_fallback_to_weighted'.",
+            enum_type_name,
+        )
+    except Exception:
+        logger.exception(
+            "Couldn't confirm/add the AI-fallback ATSAuditAction values on Postgres - AI screening falling "
+            "back to weighted scoring may fail for affected candidates until this is fixed. Everything else "
+            "is unaffected."
+        )
+ 
+ 
+_migrate_ats_audit_action_enum()
+
+
 _migrate_schema()
 
 

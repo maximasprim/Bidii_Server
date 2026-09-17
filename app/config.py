@@ -59,6 +59,31 @@ class Settings(BaseSettings):
     gemini_default_model: str = "gemini-1.5-flash"
     ai_request_timeout_seconds: int = 30
 
+    # How many candidates the async batch-screening endpoint
+    # (POST /api/admin/ats/screening/jobs/{job_id}/screen-all/async) scores
+    # concurrently. Each unit of concurrency makes its own AI provider call,
+    # so this should stay comfortably under your provider's requests-per-
+    # minute limit (e.g. Gemini's free tier is a handful of RPM) - a value
+    # that's too high just trades "slow" for "lots of 429s". Tune per your
+    # actual provider tier; does not affect the original synchronous
+    # /screen-all endpoint, which remains fully sequential.
+    ai_batch_max_workers: int = 5
+    # After this many consecutive rate-limit failures inside one batch run,
+    # stop dispatching further candidates in that batch rather than burning
+    # through the rest of a daily quota on requests that will also fail -
+    # see _run_batch_screening_job in admin_ats_screening.py.
+    ai_batch_rate_limit_stop_threshold: int = 5
+
+    # For the "export to Google Sheets" loan-applications export (see
+    # app/routers/admin_loan_export.py). A Google Cloud service account
+    # with the Sheets API and Drive API enabled - set this to EITHER the
+    # path to the downloaded JSON key file, OR the JSON key's contents
+    # pasted directly into the env var (handy on hosts like Render where
+    # uploading a file alongside the deploy isn't convenient). Leave unset
+    # to leave that export option disabled - the plain .xlsx export below
+    # works regardless and needs no Google setup at all.
+    google_service_account_json: str | None = None
+
     # --- Outbound candidate email notifications --------------------------
     # All optional. When smtp_host is unset, the notification system skips
     # sending and logs a "skipped_not_configured" entry instead of raising

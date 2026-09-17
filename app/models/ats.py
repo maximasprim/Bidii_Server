@@ -261,3 +261,60 @@ class ATSAuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class ATSBatchJobStatus(str, enum.Enum):
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
+
+
+class ATSBatchJob(Base):
+    """
+    Tracks one "screen all" batch run so its progress can be polled from
+    the admin UI instead of the caller blocking on a single long request.
+    Created by POST /jobs/{job_id}/screen-all/async (see
+    admin_ats_screening.py), then updated in place by the background
+    worker as each candidate finishes - `completed` + `failed_count` climb
+    toward `total`, one at a time, so a poller can render a live progress
+    bar. This is purely additive: the original synchronous
+    POST /jobs/{job_id}/screen-all endpoint is untouched and still works
+    exactly as before for anyone/anything still calling it directly.
+    """
+
+    __tablename__ = "ats_batch_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    job_id: Mapped[str] = mapped_column(ForeignKey("job_openings.id"), index=True)
+    admin_id: Mapped[str | None] = mapped_column(ForeignKey("admin_users.id"), nullable=True)
+
+    status: Mapped[ATSBatchJobStatus] = mapped_column(Enum(ATSBatchJobStatus), default=ATSBatchJobStatus.running)
+    total: Mapped[int] = mapped_column(default=0)
+    completed: Mapped[int] = mapped_column(default=0)
+    failed_count: Mapped[int] = mapped_column(default=0)
+
+    # Set when the whole run had to stop early - e.g. the AI provider's
+    # daily quota was hit - so the UI can say *why* progress stalled
+    # rather than leaving an admin staring at a stuck counter. Individual
+    # per-candidate failures instead accumulate in `failures` below and
+    # don't stop the run.
+    stopped_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Each entry: {application_id, full_name, error} - same shape the old
+    # synchronous endpoint already returned inline in ATSScreenAllResponse.
+    failures: Mapped[list] = mapped_column(JSON, default=list)
+
+    # Set by POST .../screen-all/{batch_job_id}/cancel. Durable in the DB
+    # (so the status endpoint reflects it even if polled from a different
+    # tab), but the actual in-flight stop is coordinated in-process - see
+    # the module-level event registry in admin_ats_screening.py. If this
+    # backend is ever restarted mid-batch, a cancel request against the
+    # orphaned row is still recorded here but has nothing left to signal.
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+ 
