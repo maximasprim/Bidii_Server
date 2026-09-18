@@ -13,6 +13,7 @@ tests
 README.md
 
 .env
+google-service-account.json
 
 node_modules
 

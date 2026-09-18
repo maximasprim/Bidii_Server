@@ -20,6 +20,7 @@ from app.routers import (
     admin_jobs,
     admin_interview_prep,
     admin_internal_notifications,
+    admin_loan_export,
     admin_loan_tiers,
     admin_news,
     admin_notifications,
@@ -453,6 +454,7 @@ app.include_router(admin_interview_prep.router)
 app.include_router(admin_internal_notifications.router)
 app.include_router(loan_tiers.router)
 app.include_router(admin_loan_tiers.router)
+app.include_router(admin_loan_export.router)
 app.include_router(admin_ats_config.router)
 app.include_router(admin_ats_screening.router)
 app.include_router(admin_ats_vetting.router)
