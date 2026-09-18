@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from app.config import get_settings
@@ -443,6 +443,7 @@ def list_career_applications(
     page_size: int = Query(20, ge=1, le=100),
     status_filter: str | None = Query(None, alias="status"),
     job_id: str | None = None,
+    q: str | None = Query(None, description="Free-text search across name, email, and phone."),
     db: Session = Depends(get_db),
 ) -> PaginatedCareerApplications:
     query = db.query(CareerApplication)
@@ -450,6 +451,18 @@ def list_career_applications(
         query = query.filter(CareerApplication.status == status_filter)
     if job_id:
         query = query.filter(CareerApplication.job_id == job_id)
+    if q:
+        # Same "one box, several fields" search as the ATS screening list
+        # (admin_ats_screening.py) - OR across name/email/phone so any of
+        # the three matches, not all three at once.
+        term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(
+                CareerApplication.full_name.ilike(term),
+                CareerApplication.email.ilike(term),
+                CareerApplication.phone.ilike(term),
+            )
+        )
     total = query.count()
     items = (
         query.order_by(CareerApplication.created_at.desc())
