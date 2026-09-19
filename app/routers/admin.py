@@ -15,9 +15,10 @@ from app.models.branch import Branch
 from app.models.career_application import CareerApplication, CareerApplicationStatus
 from app.models.contact import ContactMessage
 from app.models.loan_application import LoanApplication, LoanApplicationStatus
-from app.models.ats import ATSAuditLog, ATSRecruiterNote, ATSScreeningResult
+from app.models.ats import ATSAuditLog, ATSBatchJob, ATSRecruiterNote, ATSScreeningResult
+from app.models.internal_notification import InternalNotification
 from app.models.notification import NotificationLog
-from app.models.product_routing import SUGGESTED_ROLE_FOR_PRODUCT
+from app.models.product_routing import SUGGESTED_ROLE_FOR_PRODUCT, ProductRoutingAssignment
 from app.schemas.admin import (
     DashboardStats,
     LoanApplicationAssignRequest,
@@ -31,6 +32,7 @@ from app.schemas.admin import (
 from app.schemas.admin_user import (
     AdminUserCreate,
     AdminUserCreateResponse,
+    AdminUserHardDeleteResponse,
     AdminUserListResponse,
     AdminUserRead,
     AdminUserUpdate,
@@ -681,22 +683,141 @@ def deactivate_admin_user(
     return AdminUserRead.model_validate(user)
 
 
-def _guard_deactivation(user: AdminUser, current_admin: AdminUser, db: Session) -> None:
+@router.delete(
+    "/users/{user_id}/permanent",
+    response_model=AdminUserHardDeleteResponse,
+    dependencies=[Depends(require_roles("admin"))],
+)
+def delete_admin_user_permanently(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_admin: AdminUser = Depends(get_current_admin),
+) -> AdminUserHardDeleteResponse:
     """
-    Shared by DELETE /users/{id} and PATCH /users/{id} (when it sets
-    is_active=False) so both paths enforce the same lockout prevention:
-    you can't deactivate yourself, and the last remaining active admin
-    can't be deactivated by anyone. Compares by ID, not username — usernames
-    can change, IDs don't.
+    Permanently removes an admin account - unlike DELETE /users/{id}
+    above (which only deactivates, keeping the row and its history),
+    this actually deletes the row. Several other tables reference
+    admin_users.id by foreign key, so deleting the row outright without
+    first resolving those references would fail with a foreign-key
+    constraint error - this walks every one of them first, in the same
+    transaction as the delete itself (so if anything here fails, nothing
+    commits and the admin account is left untouched):
+ 
+    - Content whose only real owner was this admin - their ATS
+      recruiter notes on candidates, and any internal notifications
+      addressed specifically to them - is deleted along with the
+      account, since it has no meaning without them.
+    - Everything else that merely records this admin as the one who did
+      or was assigned something (loan application officer assignments,
+      product routing assignments, ATS audit log entries, batch
+      screening jobs, screening-recommendation overrides, notification
+      logs) keeps existing exactly as it was, just with that reference
+      cleared to null - the history and the work product both survive;
+      only the "who" part of "who did this" is lost, same as it would be
+      for any admin who's simply no longer around to ask. Note that a
+      notification log's sent_by_admin_id already uses null to mean
+      "sent automatically by the system" - after this, a notification
+      this admin sent manually looks the same as one sent by automation;
+      there's no separate "sent by a since-deleted admin" state.
+ 
+    Guarded the same way as deactivation (see _guard_deactivation): you
+    can't delete your own account this way, and the last remaining
+    active admin can't be deleted by anyone - both to avoid ever locking
+    every admin out of the dashboard.
+    """
+    user = db.query(AdminUser).filter(AdminUser.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin user not found.")
+    
+    _guard_deactivation(user, current_admin, db, action="permanently delete")
+ 
+    # Owned content with no meaning once this admin is gone - deleted
+    # outright rather than left behind with a null owner.
+    deleted_notes = db.query(ATSRecruiterNote).filter(ATSRecruiterNote.admin_id == user_id).delete(
+        synchronize_session=False
+    )
+    deleted_notifications = (
+        db.query(InternalNotification)
+        .filter(InternalNotification.recipient_admin_id == user_id)
+        .delete(synchronize_session=False)
+    )
+ 
+    # Everything else: the record/assignment/log entry stays, only the
+    # reference to this admin is cleared, so the delete below can't hit a
+    # foreign-key conflict from any of these tables.
+    unassigned_loans = (
+        db.query(LoanApplication)
+        .filter(LoanApplication.assigned_loan_officer_id == user_id)
+        .update({LoanApplication.assigned_loan_officer_id: None}, synchronize_session=False)
+    )
+    anonymized = 0
+    anonymized += (
+        db.query(ProductRoutingAssignment)
+        .filter(ProductRoutingAssignment.assigned_admin_id == user_id)
+        .update({ProductRoutingAssignment.assigned_admin_id: None}, synchronize_session=False)
+    )
+    anonymized += (
+        db.query(ATSScreeningResult)
+        .filter(ATSScreeningResult.override_by == user_id)
+        .update({ATSScreeningResult.override_by: None}, synchronize_session=False)
+    )
+    anonymized += (
+        db.query(ATSAuditLog)
+        .filter(ATSAuditLog.admin_id == user_id)
+        .update({ATSAuditLog.admin_id: None}, synchronize_session=False)
+    )
+    anonymized += (
+        db.query(ATSBatchJob)
+        .filter(ATSBatchJob.admin_id == user_id)
+        .update({ATSBatchJob.admin_id: None}, synchronize_session=False)
+    )
+    anonymized += (
+        db.query(NotificationLog)
+        .filter(NotificationLog.sent_by_admin_id == user_id)
+        .update({NotificationLog.sent_by_admin_id: None}, synchronize_session=False)
+    )
+ 
+    deleted_username = user.username
+    db.delete(user)
+    db.commit()
+ 
+    logger.info(
+        "Admin user %r permanently deleted account %r (notes=%d, notifications=%d, unassigned_loans=%d, anonymized=%d)",
+        current_admin.username,
+        deleted_username,
+        deleted_notes,
+        deleted_notifications,
+        unassigned_loans,
+        anonymized,
+    )
+ 
+    return AdminUserHardDeleteResponse(
+        deleted_recruiter_notes=deleted_notes,
+        deleted_internal_notifications=deleted_notifications,
+        unassigned_loan_applications=unassigned_loans,
+        anonymized_records=anonymized,
+    )
+
+
+def _guard_deactivation(user: AdminUser, current_admin: AdminUser, db: Session, action: str = "deactivate") -> None:
+    """
+    Shared by DELETE /users/{id}, PATCH /users/{id} (when it sets
+    is_active=False), and DELETE /users/{id}/permanent so all three paths
+    enforce the same lockout prevention: you can't act on your own
+    account this way, and the last remaining active admin can't be
+    removed by anyone. Compares by ID, not username — usernames can
+    change, IDs don't. `action` only changes the wording of the error
+    message (e.g. "deactivate" vs "permanently delete") - the rule
+    itself is the same either way.
     """
     if user.id == current_admin.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You can't deactivate your own account.")
-
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"You can't {action} your own account.")
+ 
     active_count = db.query(func.count(AdminUser.id)).filter(AdminUser.is_active.is_(True)).scalar() or 0
     if user.is_active and active_count <= 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can't deactivate the last remaining active admin account.",
+            detail=f"Can't {action} the last remaining active admin account.",
         )
 
 

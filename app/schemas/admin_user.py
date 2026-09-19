@@ -68,3 +68,20 @@ class AdminUserUpdateResponse(BaseModel):
 
 class AdminUserListResponse(BaseModel):
     items: list[AdminUserRead]
+
+
+class AdminUserHardDeleteResponse(BaseModel):
+    success: bool = True
+    message: str = "Admin user permanently deleted."
+    # What had to be cleaned up first so the delete itself wouldn't hit a
+    # foreign-key conflict - see delete_admin_user_permanently in
+    # admin.py for exactly what each count covers. Anything not listed
+    # here (e.g. loan applications that were assigned to this admin as a
+    # loan officer) is summarized in reassigned/unassigned below instead
+    # of deleted outright, since that content has value independent of
+    # who this admin was.
+    deleted_recruiter_notes: int = 0
+    deleted_internal_notifications: int = 0
+    unassigned_loan_applications: int = 0
+    anonymized_records: int = 0
+ 
