@@ -182,6 +182,15 @@ def _migrate_schema() -> None:
         if "ai_fallback_reason" not in columns:
             statements.append("ALTER TABLE ats_screening_results ADD COLUMN ai_fallback_reason TEXT")
 
+    # Batch-rescreening's AI model fallback chain (see
+    # _run_batch_screening_job in admin_ats_screening.py) - added after
+    # ats_batch_jobs already existed on some deployments, same as the
+    # blocks above. Defaults to NULL (no note) for every existing row.
+    if "ats_batch_jobs" in existing_tables:
+        columns = {c["name"] for c in inspector.get_columns("ats_batch_jobs")}
+        if "model_fallback_note" not in columns:
+            statements.append("ALTER TABLE ats_batch_jobs ADD COLUMN model_fallback_note TEXT")
+
     if not statements:
         return
 

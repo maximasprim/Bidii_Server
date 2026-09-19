@@ -301,6 +301,15 @@ class ATSBatchJob(Base):
     # don't stop the run.
     stopped_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Set when this run had to switch AI models (or exhaust all of them
+    # and drop to weighted scoring) mid-batch because of repeated
+    # rate-limit/quota errors - see _run_batch_screening_job's model
+    # fallback chain in admin_ats_screening.py. Unlike stopped_reason
+    # above, this does NOT mean the run stopped - it kept going, just via
+    # a different engine for the rest of the candidates. Purely
+    # informational for the admin UI; null on a run that never hit this.
+    model_fallback_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Each entry: {application_id, full_name, error} - same shape the old
     # synchronous endpoint already returned inline in ATSScreenAllResponse.
     failures: Mapped[list] = mapped_column(JSON, default=list)

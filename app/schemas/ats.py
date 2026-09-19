@@ -214,6 +214,7 @@ class ATSBatchJobStatusResponse(BaseModel):
     failed_count: int
     cancel_requested: bool = False
     stopped_reason: str | None = None
+    model_fallback_note: str | None = None
     failures: list[dict] = Field(default_factory=list)
     created_at: datetime
     finished_at: datetime | None = None

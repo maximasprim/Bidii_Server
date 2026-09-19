@@ -68,10 +68,16 @@ class Settings(BaseSettings):
     # actual provider tier; does not affect the original synchronous
     # /screen-all endpoint, which remains fully sequential.
     ai_batch_max_workers: int = 5
-    # After this many consecutive rate-limit failures inside one batch run,
-    # stop dispatching further candidates in that batch rather than burning
-    # through the rest of a daily quota on requests that will also fail -
-    # see _run_batch_screening_job in admin_ats_screening.py.
+    # How many consecutive rate-limit failures against the CURRENT AI
+    # model, inside one batch run, before that run moves the remaining
+    # candidates on to the next model - see _ai_fallback_chain /
+    # _run_batch_screening_job in admin_ats_screening.py. Once every
+    # model in that chain has hit this threshold, the rest of the batch
+    # falls back to weighted scoring instead of continuing to burn
+    # through a quota on requests that will also fail. Renamed in spirit
+    # only (kept the same setting name to avoid an unnecessary .env
+    # change) - it used to mean "stop the batch"; it now means "try
+    # something else before giving up".
     ai_batch_rate_limit_stop_threshold: int = 5
 
     # For the "export to Google Sheets" loan-applications export (see
