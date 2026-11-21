@@ -125,6 +125,21 @@ class Settings(BaseSettings):
     smtp_loans_use_tls: bool | None = None
     smtp_loans_from_email: str | None = None
     smtp_loans_from_name: str = "Bidii Credit Loans"
+
+    # --- Staff Performance module (see PERFORMANCE_MODULE.md) -------------
+    # Master rollback switch. False (the default) means the module does not
+    # exist as far as the running app is concerned: no routes, no tables
+    # created, no seeds, no extra menus or roles. Flip to true and restart to
+    # enable; flip back and restart to roll back (data is left untouched).
+    performance_module_enabled: bool = False
+    # Shared secret for the cron-called digest/reminder endpoint. Unset means
+    # that endpoint rejects every call.
+    performance_cron_token: str | None = None
+    # Optional reminder channels for the performance module. Email uses the existing "loans" SMTP identity.
+    # SMS uses Africa's Talking; leave unset to keep SMS off.
+    performance_sms_username: str | None = None
+    performance_sms_api_key: str | None = None
+    performance_sms_sender_id: str | None = None
     
     @property
     def cors_origin_list(self) -> list[str]:

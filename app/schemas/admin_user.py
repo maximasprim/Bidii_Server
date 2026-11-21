@@ -3,7 +3,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-AdminRole = Literal[
+from app.config import get_settings
+
+_BaseAdminRole = Literal[
     "admin",
     "loan_officer",
     "hr",
@@ -16,10 +18,20 @@ AdminRole = Literal[
     "mobile_loan_agent",
 ]
 
+# The generic "staff" access role (own-performance-only login) exists only while the
+# Staff Performance module is enabled, so with the flag off this schema accepts exactly
+# the same roles as before.
+if get_settings().performance_module_enabled:
+    AdminRole = Literal[_BaseAdminRole, "staff"]  # type: ignore[valid-type]
+else:
+    AdminRole = _BaseAdminRole
+
 class AdminUserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=100)
     password: str = Field(min_length=8, max_length=200)
     role: AdminRole = "admin"
+    # Used only when the Staff Performance module is on: the name on the staff profile that is created with the login.
+    full_name: str | None = Field(default=None, min_length=2, max_length=150)
     # Meaningful only for role="loan_officer" (their home branch) - ignored
     # for every other role.
     email: EmailStr | None = None

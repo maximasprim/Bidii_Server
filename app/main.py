@@ -1,3 +1,4 @@
+import importlib
 import logging
 from pathlib import Path
 
@@ -44,6 +45,12 @@ settings = get_settings()
 # Creates tables if they don't exist yet. Fine for a SQLite-backed project
 # like this one; swap for Alembic migrations if you move to Postgres/MySQL
 # and need versioned schema changes in production.
+if settings.performance_module_enabled:
+    # Registers the Staff Performance tables on Base.metadata so the create_all
+    # below creates them. With the flag off this never runs and no performance
+    # table exists.
+    importlib.import_module("app.models.performance")
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -394,6 +401,21 @@ def _bootstrap_branches() -> None:
 
 _bootstrap_branches()
 
+
+def _bootstrap_performance() -> None:
+    """Seeds performance defaults and appends the new menus to saved role overrides. Idempotent."""
+    from app.services.performance_bootstrap import bootstrap_performance
+
+    db = SessionLocal()
+    try:
+        bootstrap_performance(db)
+    finally:
+        db.close()
+
+
+if settings.performance_module_enabled:
+    _bootstrap_performance()
+
 app = FastAPI(
     title=settings.app_name,
     description="Backend API for the Bidii Credit website (contact, loan applications, careers).",
@@ -473,6 +495,47 @@ app.include_router(admin_notifications.router)
 app.include_router(branches.router)
 app.include_router(admin_branches.router)
 app.include_router(admin_product_routing.router)
+
+if settings.performance_module_enabled:
+    from app.routers import (
+        admin_performance,
+        admin_performance_360,
+        admin_performance_appraisals,
+        admin_performance_cascade,
+        admin_performance_entries,
+        admin_performance_files,
+        admin_performance_governance,
+        admin_performance_insights,
+        admin_performance_notifications,
+        admin_performance_ops,
+        admin_performance_pack,
+        admin_performance_import,
+        admin_performance_import_versions,
+        admin_performance_org,
+        admin_performance_reports,
+        admin_performance_roles,
+        admin_performance_targets,
+    )
+
+    app.include_router(admin_performance.router)
+    app.include_router(admin_performance_roles.router)
+    app.include_router(admin_performance_org.router)
+    app.include_router(admin_performance_targets.router)
+    app.include_router(admin_performance_entries.router)
+    app.include_router(admin_performance_appraisals.router)
+    app.include_router(admin_performance_files.router)
+    app.include_router(admin_performance_import_versions.router)  # before the import router: /versions is not an import id
+    app.include_router(admin_performance_import.router)
+    app.include_router(admin_performance_reports.router)
+    app.include_router(admin_performance_insights.router)
+    app.include_router(admin_performance_governance.router)
+    app.include_router(admin_performance_notifications.router)
+    app.include_router(admin_performance_ops.router)
+    app.include_router(admin_performance_360.router)
+    app.include_router(admin_performance_cascade.router)
+    app.include_router(admin_performance_pack.router)
+    app.include_router(admin_performance_ops.internal)
+    app.include_router(admin_performance_pack.internal)
 
 # Self-contained admin dashboard (login, stats, submissions) - a static
 # HTML/CSS/JS page with no build step, served at /admin/. It talks to the

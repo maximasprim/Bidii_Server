@@ -9,6 +9,7 @@ WORKDIR /app
 # Install system packages
 RUN apt-get update && apt-get install -y \
     gcc \
+    tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (better Docker caching)

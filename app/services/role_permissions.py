@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.services.auth import get_current_admin
 
@@ -69,6 +70,33 @@ DEFAULT_MENU_ACCESS: dict[str, list[str]] = {
     "mobile_loan_agent": ["/admin/loan-applications"],
 }
 
+
+# --- Staff Performance module (feature-flagged) -------------------------------
+# With PERFORMANCE_MODULE_ENABLED=false (the default) nothing below runs and the
+# registry, roles and defaults above are exactly what they always were.
+PERFORMANCE_MENU_REGISTRY: list[tuple[str, str]] = [
+    ("/admin/my-performance", "My Performance"),
+    ("/admin/performance", "Staff Performance"),
+    ("/admin/performance-settings", "Performance Settings"),
+]
+# Generic access role for people who only need the performance module (e.g. a
+# Credit Risk Analyst with no other dashboard duties).
+PERFORMANCE_ROLE = "staff"
+# Menus every role gets by default when the module is on. The settings menu is
+# deliberately absent: "admin" always has every menu, nobody else needs it.
+# "/admin/performance" is shown to everyone because what a person can see inside
+# it is decided by get_performance_scope from the database, not by this menu.
+PERFORMANCE_DEFAULT_PATHS: list[str] = ["/admin/my-performance", "/admin/performance"]
+
+if get_settings().performance_module_enabled:
+    MENU_REGISTRY.extend(PERFORMANCE_MENU_REGISTRY)
+    MENU_PATHS.update(path for path, _label in PERFORMANCE_MENU_REGISTRY)
+    CONFIGURABLE_ROLES.append(PERFORMANCE_ROLE)
+    ALL_ROLES.append(PERFORMANCE_ROLE)
+    for _role in list(DEFAULT_MENU_ACCESS):
+        DEFAULT_MENU_ACCESS[_role] = [*DEFAULT_MENU_ACCESS[_role], *PERFORMANCE_DEFAULT_PATHS]
+    DEFAULT_MENU_ACCESS[PERFORMANCE_ROLE] = list(PERFORMANCE_DEFAULT_PATHS)
+    
 
 @dataclass
 class RoleMenus:
