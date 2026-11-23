@@ -2,9 +2,9 @@
 Levels (seniority tiers) within a performance role and their default monthly targets.
 
 Seeded from the HR induction deck:
-  * Loan Officer (SME staff): DSE1 600,000 / DSE2 700,000 / SNR DSE 800,000; 30-day PAR below 5%
-  * Auto Champion: 1,500,000 / 2,000,000 (senior) / 3,000,000 (BDO); 30-day PAR below 7.5%
-  * Check-off Officer: 1,000,000 - from the Check-off sheet (most officers have it), NOT from the deck; to confirm
+  * Loan Officer (SME staff): DSE1 600,000 / DSE2 700,000 / SNR DSE 800,000 / BDO 1,000,000; 30-day PAR below 5%
+  * Auto Champion: L1 1,000,000 / L2 1,500,000 / Senior 2,000,000 / BDO 3,000,000; 30-day PAR below 10% (updated by HR)
+  * Check-off: L1 1,000,000 / L2 1,500,000 / Senior Check-off Agent 2,000,000 (updated by HR)
 Defaults are only applied by an explicit bulk action - they never change anyone's target on their own.
 """
 
@@ -28,12 +28,15 @@ SEED_LEVELS: dict[str, list[tuple[str, str, int, dict[str, float], str]]] = {
         ("bdo", "BDO", 4, {"sales": 1000000, "par30": 5}, "Business Development Officer (senior SME sales level, above SNR DSE): target 1,000,000; PAR below 5%."),
     ],
     "auto_champion": [
-        ("auto_champion", "Auto Champion", 1, {"sales": 1500000, "par30": 7.5}, "Auto staff table (HR induction): target 1,500,000; PAR below 7.5%."),
-        ("senior_auto_champion", "Senior Auto Champion", 2, {"sales": 2000000, "par30": 7.5}, "Auto staff table (HR induction): target 2,000,000; PAR below 7.5%."),
-        ("bdo_auto_champion", "BDO Auto Champion", 3, {"sales": 3000000, "par30": 7.5}, "Auto staff table (HR induction): target 3,000,000; PAR below 7.5%."),
+        ("auto_champion", "Auto Champion Level 1", 1, {"sales": 1000000, "par30": 10}, "Auto Champion Level 1: target 1,000,000; PAR below 10%."),
+        ("auto_champion_l2", "Auto Champion Level 2", 2, {"sales": 1500000, "par30": 10}, "Auto Champion Level 2: target 1,500,000; PAR below 10%."),
+        ("senior_auto_champion", "Senior Auto Champion", 3, {"sales": 2000000, "par30": 10}, "Senior Auto Champion: target 2,000,000; PAR below 10%."),
+        ("bdo_auto_champion", "BDO Auto Champion", 4, {"sales": 3000000, "par30": 10}, "BDO Auto Champion: target 3,000,000; PAR below 10%."),
     ],
     "check_off_agent": [
-        ("check_off_officer", "Check-off Officer", 1, {"disbursement": 1000000}, "From the Check-off sheet (most officers have this target). Not in the induction deck - confirm."),
+        ("check_off_officer", "Check-off Officer Level 1", 1, {"disbursement": 1000000}, "Check-off Level 1: target 1,000,000."),
+        ("check_off_officer_l2", "Check-off Officer Level 2", 2, {"disbursement": 1500000}, "Check-off Level 2: target 1,500,000."),
+        ("senior_check_off_agent", "Senior Check-off Agent", 3, {"disbursement": 2000000}, "Senior Check-off Agent: target 2,000,000."),
     ],
 }
 

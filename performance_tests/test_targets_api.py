@@ -256,8 +256,10 @@ def test_seeded_levels_carry_the_numbers_from_the_hr_induction_deck(client, db, 
     by_label = {i["label"]: i for i in items}
     assert by_label["DSE1"]["default_targets"] == {"sales": 600000.0, "par30": 5.0}
     assert by_label["DSE2"]["default_targets"]["sales"] == 700000.0 and by_label["SNR DSE"]["default_targets"]["sales"] == 800000.0
-    assert [by_label[n]["default_targets"]["sales"] for n in ("Auto Champion", "Senior Auto Champion", "BDO Auto Champion")] == [1500000.0, 2000000.0, 3000000.0]
-    assert by_label["Auto Champion"]["default_targets"]["par30"] == 7.5
+    assert [by_label[n]["default_targets"]["sales"] for n in ("Auto Champion Level 1", "Auto Champion Level 2", "Senior Auto Champion", "BDO Auto Champion")] == [1000000.0, 1500000.0, 2000000.0, 3000000.0]
+    assert by_label["Auto Champion Level 1"]["default_targets"]["par30"] == 10.0
+    assert by_label["BDO"]["default_targets"] == {"sales": 1000000.0, "par30": 5.0}
+    assert [by_label[n]["default_targets"]["disbursement"] for n in ("Check-off Officer Level 1", "Check-off Officer Level 2", "Senior Check-off Agent")] == [1000000.0, 1500000.0, 2000000.0]
     assert by_label["DSE1"]["staff_count"] == 1
 
 
@@ -300,7 +302,7 @@ def test_staff_level_must_belong_to_the_staff_members_role(client, db, w):
     auto_role = db.query(PerformanceRole).filter_by(key="auto_champion").one()
     moved = client.patch(f"{BASE}/staff/{w.p.lo1.id}", json={"performance_role_id": auto_role.id}, headers=h).json()["data"]
     assert moved["level_id"] is None and moved["performance_role_name"] == "Auto Champion"
-    assert client.patch(f"{BASE}/staff/{w.p.lo1.id}", json={"level_id": ac.id}, headers=h).json()["data"]["level_label"] == "Auto Champion"
+    assert client.patch(f"{BASE}/staff/{w.p.lo1.id}", json={"level_id": ac.id}, headers=h).json()["data"]["level_label"] == "Auto Champion Level 1"
     assert client.patch(f"{BASE}/staff/{w.p.lo1.id}", json={"level_id": None}, headers=h).json()["data"]["level_id"] is None
 
 

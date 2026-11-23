@@ -237,7 +237,7 @@ def test_level_seeding_is_idempotent_and_never_overwrites_an_edit(db, w):
     assert seed_levels(db) == 0
     db.refresh(dse1)
     assert (dse1.label, dse1.default_targets) == ("DSE 1 (edited)", {"sales": 111})
-    assert db.query(PerformanceLevel).count() == 8
+    assert db.query(PerformanceLevel).count() == 11
 
 
 def test_disciplinary_ladder_is_restricted_and_the_old_generic_warning_is_gone(client, db, w):
