@@ -100,7 +100,7 @@ by a second manager link.
   branches with no manager or region, regions with no manager (warnings); people missing a level, roles with no KPI
   set (notes). The CEO needs no manager.
 * **Set up branches and regions** (admin): creates a unit for every branch on the website's list (that list is only
-  read, never changed), adds Head Office / Check-off / Debt Collection teams, and proposes three regions from the
+  read, never changed), adds Head Office and Check-off teams (debt collection is not a unit: each branch has its own debt collection staff account, placed in that branch), and proposes three regions from the
   workbook (N. RIFT: Kawangware, CBD, Ngong Road, Nakuru; N. EAST: Kitengela, Embakasi, Machakos, Kajiado; CENTRAL:
   Ruiru, Thika, Karatina = the 11 current branches). Idempotent; never moves a branch already in a region.
 
@@ -210,7 +210,7 @@ an admin who later unticks a menu is not overruled by the next restart.
 - Internal cron routes are now `daily-digest`, `weekly-digest`, `monthly-pack`.
 
 ## Branches, regions and placing everyone
-Staff Performance > Organisation chart > **Branches and regions** (admin edits; HR sees it and can place people). Branches come from the website's branch list (read only). The first-time wizard uses a fixed proposal from the 2025 workbook; after that this editor is the source of truth: add, rename or remove regions, move any branch or team to a region (history is kept), set unit and regional managers, add teams, and create units for any branch that has none. **Place people in the structure** proposes, for people with no unit or no line manager, a unit (from the branch on their login, or their role: head-office roles to Head Office, check-off agents to Check-off, debt recovery to Debt Collection) and a line manager (the unit's manager, else the single branch manager there; a branch manager's manager is their region's manager). Nothing is written until you accept rows (untick to leave someone); the step is one transaction, refuses loops, and records each change in the person's assignment history. Endpoints: `GET /org-setup/layout`, `GET /org-setup/placement`, `POST /org-setup/placement/apply`.
+Staff Performance > Organisation chart > **Branches and regions** (admin edits; HR sees it and can place people). Branches come from the website's branch list (read only). The first-time wizard uses a fixed proposal from the 2025 workbook; after that this editor is the source of truth: add, rename or remove regions, move any branch or team to a region (history is kept), set unit and regional managers, add teams, and create units for any branch that has none. **Place people in the structure** proposes, for people with no unit or no line manager, a unit (from the branch on their login, or their role: head-office roles to Head Office, check-off agents to Check-off; debt collection accounts go to the branch on their login, as every branch has its own) and a line manager (the unit's manager, else the single branch manager there; a branch manager's manager is their region's manager). Nothing is written until you accept rows (untick to leave someone); the step is one transaction, refuses loops, and records each change in the person's assignment history. Endpoints: `GET /org-setup/layout`, `GET /org-setup/placement`, `POST /org-setup/placement/apply`.
 
 **Duplicates and linking (admin).** *Possible duplicates* finds an empty unit that looks like a second copy of a unit with people (for example "Nairobi CBD" made by setup next to the imported "Cbd") and, when accepted, removes only the empty copy, links the kept unit to the website branch and can take over the branch's name. A unit with people, history, score snapshots or cascade targets is never removed. Any branch unit can also be linked to a website branch from its row; an unlinked website branch suggests the imported unit that looks like it. Endpoints: `GET /org-setup/duplicates`, `POST /org-setup/duplicates/clean-up`, `POST /org-setup/units/{id}/link-branch`, `DELETE /org-setup/units/{id}` (empty units only).
 
@@ -339,3 +339,26 @@ UI: *Suggestions* page (from Staff Performance), "Where I'm heading" on My Perfo
 
 ## Running the tests
 From the backend folder: `PERF_TEST_FLAG=on python -m pytest performance_tests -q` and `PERF_TEST_FLAG=off python -m pytest performance_tests/test_parity_flag_off.py -q`.
+
+
+## Debt collection
+
+Debt collection is a unit **under each branch** ("Karatina Debt Collection"), not one team for the whole company.
+
+- **Creating them:** Staff Performance > Organisation chart > "Add Debt Collection to every branch" (or `POST /org-setup/debt-collection-units`). One unit per open branch, kind `team`, `parent_unit_id` = the branch, in the branch's region. Safe to run again; an existing unit with the same name is adopted.
+- **Region:** a unit under a branch follows the branch when the branch moves region. Under-branch units never show as units of their own in the region lists; they appear under their branch.
+- **Reporting:** debt collectors (role `debt_recovery`) report to the **Debt Collection Manager** (a role named "Debt Collection Manager"; matched by key or name), who reports to the **General Manager** (role `general_manager`). "Place people in the structure" proposes this when there is exactly one of each; a debt collector's unit is their branch's Debt Collection unit, found from the branch on their login.
+- **More than one branch:** a collector has one main unit on their profile; the extra branches they cover are in `staff_unit_coverage` (`GET/PUT /staff/{id}/coverage`, admin or HR; "Also covers" on the staff form). Coverage records who covers what, it does not move anyone. Closing a unit ends coverage of it.
+- **Not done yet:** collections are still one monthly figure per person per KPI. Recording and targeting collections **per branch** is a separate step.
+
+
+## Importing a Job Description (JD)
+
+`POST /api/admin/performance/ai/extract-jd` turns an uploaded JD into a draft role (nothing is saved until an admin saves it).
+
+* **.docx in the house layout** (info box, "Key Responsibilities | % of Time | Performance Measurement Criteria" table, "Other Responsibilities", qualifications box, competencies box) is read **directly** by `app/services/jd_docx_reader.py` - no AI, no key needed, exact and repeatable. It follows the *layout*, not the wording, so any number of responsibilities, duties or competencies, and loosely-worded labels, are fine. The response has `ai.provider = "local"`.
+* **PDFs, scans and free-form documents** (and any .docx not in that layout) go to the AI extractor exactly as before.
+* Add `?force_ai=true` to skip the direct reader for a .docx.
+* Both paths run the same `performance_roles.validate_jd` rules and return problems as `warnings` (weights not totalling 100, a responsibility with no criteria, missing purpose/qualifications/competencies). Nothing is silently "fixed".
+* Not imported: approvers and reporting relationships (set in the app). The competency list is whatever the document contains.
+* Tests: `performance_tests/test_jd_docx_import.py` (real JDs in `performance_tests/fixtures/jds/` plus layout-mutation cases).

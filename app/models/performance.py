@@ -111,7 +111,7 @@ class RatingScale(Base):
 
 
 class PerformanceUnit(Base):
-    """A place staff are measured in: a branch, a team (Check-off, Debt Recovery) or Head Office."""
+    """A place staff are measured in: a branch, a team (Check-off) or Head Office. A team can sit under a branch (each branch's Debt Collection)."""
 
     __tablename__ = "performance_units"
 
@@ -121,6 +121,8 @@ class PerformanceUnit(Base):
     # Optional link to the public branches table (never created from here).
     branch_id: Mapped[str | None] = mapped_column(ForeignKey("branches.id"), nullable=True, index=True)
     manager_profile_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    # The unit this one sits under (a branch's Debt Collection unit has the branch as its parent). One level only.
+    parent_unit_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
@@ -218,6 +220,19 @@ class StaffAssignmentHistory(Base):
     effective_from: Mapped[date] = mapped_column(Date)
     effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class StaffUnitCoverage(Base):
+    """Units someone works in besides their main one (a debt collector who covers several branches). The main unit stays on the profile."""
+
+    __tablename__ = "staff_unit_coverage"
+    __table_args__ = (Index("ix_coverage_profile_unit", "profile_id", "unit_id", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    profile_id: Mapped[str] = mapped_column(ForeignKey("staff_profiles.id", ondelete="CASCADE"))
+    unit_id: Mapped[str] = mapped_column(ForeignKey("performance_units.id"), index=True)
     created_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

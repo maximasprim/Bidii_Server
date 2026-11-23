@@ -25,6 +25,7 @@ SEED_LEVELS: dict[str, list[tuple[str, str, int, dict[str, float], str]]] = {
         ("dse1", "DSE1", 1, {"sales": 600000, "par30": 5}, "SME staff incentive table (HR induction): SME target 600,000; PAR below 5%."),
         ("dse2", "DSE2", 2, {"sales": 700000, "par30": 5}, "SME staff incentive table (HR induction): SME target 700,000; PAR below 5%."),
         ("snr_dse", "SNR DSE", 3, {"sales": 800000, "par30": 5}, "SME staff incentive table (HR induction): SME target 800,000; PAR below 5%."),
+        ("bdo", "BDO", 4, {"sales": 1000000, "par30": 5}, "Business Development Officer (senior SME sales level, above SNR DSE): target 1,000,000; PAR below 5%."),
     ],
     "auto_champion": [
         ("auto_champion", "Auto Champion", 1, {"sales": 1500000, "par30": 7.5}, "Auto staff table (HR induction): target 1,500,000; PAR below 7.5%."),

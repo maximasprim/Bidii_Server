@@ -75,6 +75,13 @@ def ensure_additive_columns(db: Session) -> list[str]:
             db.execute(text("CREATE INDEX IF NOT EXISTS ix_staff_profiles_level_id ON staff_profiles (level_id)"))
             db.commit()
             added.append("staff_profiles.level_id")
+    if "performance_units" in inspector.get_table_names():
+        unit_columns = {c["name"] for c in inspector.get_columns("performance_units")}
+        if "parent_unit_id" not in unit_columns:
+            db.execute(text("ALTER TABLE performance_units ADD COLUMN parent_unit_id VARCHAR(36)"))
+            db.execute(text("CREATE INDEX IF NOT EXISTS ix_performance_units_parent_unit_id ON performance_units (parent_unit_id)"))
+            db.commit()
+            added.append("performance_units.parent_unit_id")
     return added
 
 

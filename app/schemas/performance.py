@@ -140,6 +140,7 @@ class UnitCreate(BaseModel):
     kind: UnitKind = "branch"
     branch_id: str | None = None
     manager_profile_id: str | None = None
+    parent_unit_id: str | None = None  # a team under a branch (for example its Debt Collection unit)
 
 
 class UnitUpdate(BaseModel):
@@ -156,6 +157,7 @@ class UnitRead(BaseModel):
     kind: str
     branch_id: str | None = None
     manager_profile_id: str | None = None
+    parent_unit_id: str | None = None
     region_id: str | None = None
     region_name: str | None = None
     is_active: bool

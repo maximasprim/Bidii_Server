@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.branch import Branch
-from app.models.performance import CascadeTarget, PerformanceUnit, ScoreSnapshot, StaffAssignmentHistory, StaffProfile, UnitRegionLink
+from app.models.performance import CascadeTarget, PerformanceUnit, ScoreSnapshot, StaffAssignmentHistory, StaffProfile, StaffUnitCoverage, UnitRegionLink
 
 
 class UnitError(ValueError):
@@ -39,15 +39,87 @@ def usage(db: Session, unit_id: str) -> dict[str, int]:
     }
 
 
+def children(db: Session, unit_id: str) -> list[PerformanceUnit]:
+    return db.query(PerformanceUnit).filter(PerformanceUnit.parent_unit_id == unit_id).order_by(PerformanceUnit.name).all()
+
+
 def is_empty(db: Session, unit_id: str) -> bool:
-    return not any(usage(db, unit_id).values())
+    """Nothing refers to it: no people, history, snapshots, cascade targets or people covering it, and every unit under it is empty too."""
+    if any(usage(db, unit_id).values()):
+        return False
+    if db.query(StaffUnitCoverage).filter(StaffUnitCoverage.unit_id == unit_id).count():
+        return False
+    return all(is_empty(db, c.id) for c in children(db, unit_id))
 
 
 def delete_if_empty(db: Session, unit: PerformanceUnit) -> None:
     if not is_empty(db, unit.id):
         raise UnitError(f"{unit.name} has people or history, so it can't be removed.")
+    for child in children(db, unit.id):
+        delete_if_empty(db, child)
     db.query(UnitRegionLink).filter(UnitRegionLink.unit_id == unit.id).delete()
     db.query(PerformanceUnit).filter(PerformanceUnit.id == unit.id).delete()
+
+
+# ---- debt collection: one unit under every branch -----------------------------------------------------------------
+
+DEBT_SUFFIX = "Debt Collection"
+
+
+def debt_unit_name(branch_name: str) -> str:
+    return f"{branch_name.strip()} {DEBT_SUFFIX}"
+
+
+def is_debt_unit(unit: PerformanceUnit) -> bool:
+    return unit.parent_unit_id is not None and unit.name.strip().lower().endswith(DEBT_SUFFIX.lower())
+
+
+def debt_unit_of(db: Session, branch_unit_id: str) -> PerformanceUnit | None:
+    return next((c for c in children(db, branch_unit_id) if c.is_active and is_debt_unit(c)), None)
+
+
+def branches_missing_debt_unit(db: Session) -> list[PerformanceUnit]:
+    branches = db.query(PerformanceUnit).filter(PerformanceUnit.is_active.is_(True), PerformanceUnit.kind == "branch", PerformanceUnit.parent_unit_id.is_(None)).order_by(PerformanceUnit.name).all()
+    return [b for b in branches if debt_unit_of(db, b.id) is None]
+
+
+def follow_parent_region(db: Session, parent: PerformanceUnit, region_id: str | None, start) -> None:
+    """Units under a branch are in the branch's region: when the branch moves, they move with it (history kept)."""
+    from datetime import timedelta
+
+    for child in children(db, parent.id):
+        open_link = db.query(UnitRegionLink).filter(UnitRegionLink.unit_id == child.id, UnitRegionLink.effective_to.is_(None)).first()
+        if open_link is not None:
+            open_link.effective_to = max(open_link.effective_from, start - timedelta(days=1))
+        if region_id is not None:
+            db.add(UnitRegionLink(unit_id=child.id, region_id=region_id, effective_from=start))
+
+
+def ensure_debt_collection_units(db: Session) -> dict[str, int]:
+    """
+    Gives every open branch its own "<Branch> Debt Collection" unit (a team under the branch, in the branch's region). Safe to run again:
+    a branch that already has one is left alone, and an existing unit with that exact name is adopted rather than duplicated.
+    """
+    from app.services.performance_time import today_nairobi
+
+    created = adopted = 0
+    for branch in branches_missing_debt_unit(db):
+        name = debt_unit_name(branch.name)
+        existing = db.query(PerformanceUnit).filter(PerformanceUnit.name == name).first()
+        if existing is not None:
+            if existing.parent_unit_id is None and existing.is_active:
+                existing.parent_unit_id, existing.kind = branch.id, "team"
+                adopted += 1
+            continue  # a closed unit, or one under another branch, with the same name: leave it, don't guess
+        unit = PerformanceUnit(name=name, kind="team", parent_unit_id=branch.id)
+        db.add(unit)
+        db.flush()
+        link = db.query(UnitRegionLink).filter(UnitRegionLink.unit_id == branch.id, UnitRegionLink.effective_to.is_(None)).first()
+        if link is not None:
+            db.add(UnitRegionLink(unit_id=unit.id, region_id=link.region_id, effective_from=link.effective_from or today_nairobi()))
+        created += 1
+    db.commit()
+    return {"created": created, "adopted": adopted}
 
 
 def link_to_branch(db: Session, unit: PerformanceUnit, branch_id: str | None, use_branch_name: bool) -> dict[str, Any]:
@@ -149,6 +221,10 @@ def close_unit(db: Session, unit: PerformanceUnit, move_to_id: str | None, usern
         dest = db.get(PerformanceUnit, move_to_id)
         if dest is None or not dest.is_active or dest.id == unit.id:
             raise UnitError("Choose an open unit to move the people to.")
+    for child in [c for c in children(db, unit.id) if c.is_active]:
+        dest_child = debt_unit_of(db, dest.id) if dest else None
+        close_unit(db, child, dest_child.id if dest_child else (dest.id if dest else None), username)
+    db.query(StaffUnitCoverage).filter(StaffUnitCoverage.unit_id == unit.id).delete()
     today = today_nairobi()
     people = db.query(StaffProfile).filter(StaffProfile.unit_id == unit.id).all()
     for p in people:

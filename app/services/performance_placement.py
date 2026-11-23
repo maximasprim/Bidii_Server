@@ -3,14 +3,16 @@ Where everyone sits in the organisation. Reads the structure (regions, units, pu
 unit or no line manager yet, where they belong; nothing is written until an administrator or HR accepts rows. The proposal is only
 ever a suggestion built from facts already in the system:
 
-  unit     the branch on the person's login -> that branch's unit; else head-office style roles -> Head Office, check-off agents ->
-           Check-off, debt recovery -> Debt Collection
+  unit     the branch on the person's login -> that branch's unit, or its Debt Collection unit for a debt collector; else head-office
+           style roles (and the Debt Collection Manager) -> Head Office, check-off agents -> Check-off
   manager  the unit's manager if one is set, else the one branch manager in that unit; a branch manager's manager is their region's
-           manager. Never the person themselves, and never a loop.
+           manager; a debt collector's manager is the Debt Collection Manager, whose manager is the General Manager. Never the person
+           themselves, and never a loop.
 """
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
@@ -23,7 +25,17 @@ from app.services.performance_time import today_nairobi
 
 LIVE = ("active", "probation", "pip")
 HEAD_OFFICE_ROLES = {"hr_officer", "head_office_staff", "marketing_manager", "customer_service_manager", "general_manager", "ceo", "credit_risk_analyst"}
-TEAM_BY_ROLE = {"check_off_agent": "Check-off", "debt_recovery": "Debt Collection"}
+TEAM_BY_ROLE = {"check_off_agent": "Check-off"}  # debt collection is not one team: each branch has its own Debt Collection unit
+DEBT_COLLECTOR_KEY = "debt_recovery"
+GENERAL_MANAGER_KEY = "general_manager"
+_DCM_NAME = re.compile(r"debt\s+(collection|collector|collectors|recovery)\s+manager", re.I)
+
+
+def is_debt_manager(role: PerformanceRole | None) -> bool:
+    """The Debt Collection Manager: found by the role's key or name, so a role you add yourself is recognised."""
+    if role is None:
+        return False
+    return role.key in {"debt_collection_manager", "debt_collector_manager", "debt_recovery_manager"} or bool(_DCM_NAME.search(role.name or ""))
 
 
 class PlacementError(ValueError):
@@ -35,7 +47,12 @@ def _region_of(db: Session) -> dict[str, str]:
 
 
 def layout(db: Session) -> dict[str, Any]:
-    units = db.query(PerformanceUnit).filter(PerformanceUnit.is_active.is_(True)).order_by(PerformanceUnit.name).all()
+    all_units = db.query(PerformanceUnit).filter(PerformanceUnit.is_active.is_(True)).order_by(PerformanceUnit.name).all()
+    kids_of: dict[str, list[PerformanceUnit]] = {}
+    for u in all_units:
+        if u.parent_unit_id:
+            kids_of.setdefault(u.parent_unit_id, []).append(u)
+    units = [u for u in all_units if not u.parent_unit_id]  # units under a branch are shown with it, not as units of their own
     region_of = _region_of(db)
     staff_in = {}
     for uid in [p.unit_id for p in db.query(StaffProfile.unit_id).filter(StaffProfile.status.in_(LIVE), StaffProfile.is_active.is_(True), StaffProfile.unit_id.isnot(None))]:
@@ -45,7 +62,9 @@ def layout(db: Session) -> dict[str, Any]:
 
     def unit_row(u: PerformanceUnit) -> dict[str, Any]:
         return {"id": u.id, "name": u.name, "kind": u.kind, "branch_id": u.branch_id, "branch_name": branch_names.get(u.branch_id), "staff": staff_in.get(u.id, 0),
-                "manager_profile_id": u.manager_profile_id, "manager_name": names.get(u.manager_profile_id)}
+                "manager_profile_id": u.manager_profile_id, "manager_name": names.get(u.manager_profile_id),
+                "children": [{"id": c.id, "name": c.name, "kind": c.kind, "staff": staff_in.get(c.id, 0), "manager_profile_id": c.manager_profile_id,
+                              "manager_name": names.get(c.manager_profile_id)} for c in kids_of.get(u.id, [])]}
 
     regions = db.query(Region).filter(Region.is_active.is_(True)).order_by(Region.name).all()
     out_regions = [{"id": r.id, "name": r.name, "manager_profile_id": r.manager_profile_id, "manager_name": names.get(r.manager_profile_id),
@@ -58,7 +77,10 @@ def layout(db: Session) -> dict[str, Any]:
     unit_of_branch = {u.branch_id: u for u in units if u.branch_id}
     all_branches = [{"id": i, "name": n, "unit_id": unit_of_branch[i].id if i in unit_of_branch else None, "unit_empty": bool(i in unit_of_branch and is_empty(db, unit_of_branch[i].id))}
                     for i, n in sorted(branch_names.items(), key=lambda x: x[1])]
+    from app.services.performance_units import branches_missing_debt_unit
+
     return {
+        "debt_units_missing": len(branches_missing_debt_unit(db)),
         "all_branches": all_branches,
         "regions": out_regions,
         "units_without_region": [unit_row(u) for u in units if u.id not in region_of],
@@ -88,6 +110,11 @@ def preview(db: Session) -> dict[str, Any]:
     profiles = db.query(StaffProfile).filter(StaffProfile.status.in_(LIVE), StaffProfile.is_active.is_(True)).order_by(StaffProfile.full_name).all()
     by_id = {p.id: p for p in profiles}
     names = {p.id: p.full_name for p in profiles}
+    from app.services.performance_units import debt_unit_of
+
+    debt_unit_for = {u.id: debt_unit_of(db, u.id) for u in units.values() if u.kind == "branch" and not u.parent_unit_id}
+    debt_managers = [p for p in profiles if is_debt_manager(roles.get(p.performance_role_id))]
+    general_managers = [p for p in profiles if (roles.get(p.performance_role_id) is not None and roles[p.performance_role_id].key == GENERAL_MANAGER_KEY)]
 
     # one branch manager per unit, when unambiguous
     bm: dict[str, list[str]] = {}
@@ -102,9 +129,12 @@ def preview(db: Session) -> dict[str, Any]:
         unit_id, why_unit = p.unit_id, None
         if unit_id is None:
             b = login_branch.get(p.admin_user_id) if p.admin_user_id else None
-            if b and b in by_branch:
+            debt_unit = debt_unit_for.get(by_branch[b].id) if b and b in by_branch and role is not None and role.key == DEBT_COLLECTOR_KEY else None
+            if debt_unit is not None:
+                unit_id, why_unit = debt_unit.id, f"debt collector for the branch on their login ({by_branch[b].name})"
+            elif b and b in by_branch:
                 unit_id, why_unit = by_branch[b].id, "the branch on their login"
-            elif role is not None and role.key in HEAD_OFFICE_ROLES and "Head Office" in by_name:
+            elif role is not None and (role.key in HEAD_OFFICE_ROLES or is_debt_manager(role)) and "Head Office" in by_name:
                 unit_id, why_unit = by_name["Head Office"].id, f"{role.name} sits at Head Office"
             elif role is not None and role.key in TEAM_BY_ROLE and TEAM_BY_ROLE[role.key] in by_name:
                 unit_id, why_unit = by_name[TEAM_BY_ROLE[role.key]].id, f"{role.name} works in {TEAM_BY_ROLE[role.key]}"
@@ -112,11 +142,20 @@ def preview(db: Session) -> dict[str, Any]:
         if manager_id is None and not p.is_executive:
             unit = units.get(unit_id) if unit_id else None
             cand = None
-            if role is not None and role.key == "branch_manager" and unit is not None:
+            if is_debt_manager(role):
+                if len(general_managers) == 1 and general_managers[0].id != p.id:
+                    cand, why_mgr = general_managers[0].id, "the General Manager"
+            elif role is not None and role.key == DEBT_COLLECTOR_KEY:
+                if unit is not None and unit.manager_profile_id and unit.manager_profile_id != p.id:
+                    cand, why_mgr = unit.manager_profile_id, f"manager of {unit.name}"
+                elif len(debt_managers) == 1 and debt_managers[0].id != p.id:
+                    cand, why_mgr = debt_managers[0].id, "the Debt Collection Manager"
+            elif role is not None and role.key == "branch_manager" and unit is not None:
                 reg = regions.get(region_of.get(unit.id, ""))
                 if reg is not None and reg.manager_profile_id and reg.manager_profile_id != p.id:
                     cand, why_mgr = reg.manager_profile_id, f"manager of region {reg.name}"
-            elif unit is not None:
+            if cand is None and unit is not None and not is_debt_manager(role) and not (role is not None and role.key == "branch_manager"):
+                # everyone else (and a debt collector with no Debt Collection Manager yet): the unit's manager, else its one branch manager
                 if unit.manager_profile_id and unit.manager_profile_id != p.id:
                     cand, why_mgr = unit.manager_profile_id, f"manager of {unit.name}"
                 elif len(bm.get(unit.id, [])) == 1 and bm[unit.id][0] != p.id:

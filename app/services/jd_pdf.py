@@ -18,6 +18,7 @@ be the same, just tailored for the different roles").
 
 from datetime import date
 from pathlib import Path
+from xml.sax.saxutils import escape as _xml_escape
 from typing import TYPE_CHECKING
 
 from reportlab.lib import colors
@@ -89,12 +90,44 @@ _doc_title = ParagraphStyle("JDDocTitle", parent=_styles["Normal"], fontSize=13,
 _small = ParagraphStyle("JDSmall", parent=_body, fontSize=8, textColor=colors.grey)
 
 
+def _esc(value) -> str:
+    """
+    Escapes user-supplied text for reportlab's mini-HTML Paragraph parser.
+    Without it a stray "<" or "&" in a JD (e.g. "PAR < 5%") makes the whole
+    PDF download fail with a parse error.
+    """
+    return _xml_escape("" if value is None else str(value))
+
+
 def _bullets(items: list[str]) -> str:
-    return "<br/>".join(f"&#8226; {item}" for item in items) if items else "-"
+    return "<br/>".join(f"&#8226; {_esc(item)}" for item in items) if items else "-"
 
 
 def _numbered(items: list[str]) -> str:
-    return "<br/>".join(f"{i}) {item}" for i, item in enumerate(items, start=1)) if items else "-"
+    return "<br/>".join(f"{i}) {_esc(item)}" for i, item in enumerate(items, start=1)) if items else "-"
+
+
+def _competencies(jd_content: dict) -> list[tuple[str, str]]:
+    """All six company competencies unless the JD names a subset (matched case-insensitively)."""
+    wanted = {str(name).strip().lower() for name in (jd_content.get("competencies") or []) if str(name).strip()}
+    if not wanted:
+        return list(BEHAVIORAL_COMPETENCIES)
+    chosen = [item for item in BEHAVIORAL_COMPETENCIES if item[0].lower() in wanted]
+    return chosen or list(BEHAVIORAL_COMPETENCIES)  # an unrecognised list never produces an empty box
+
+
+def _approvers(jd_content: dict) -> list[tuple[str, str]]:
+    """
+    Signatories for the APPROVALS block: the ones saved on the JD if any,
+    otherwise the two fixed company approvers above (the original behaviour,
+    so JDs saved before per-JD approvals existed render unchanged).
+    """
+    saved = [
+        (str(item.get("name", "")).strip(), str(item.get("title", "")).strip())
+        for item in (jd_content.get("approvals") or [])
+        if isinstance(item, dict) and str(item.get("name", "")).strip()
+    ]
+    return saved or [(APPROVER_1_NAME, APPROVER_1_TITLE), (APPROVER_2_NAME, APPROVER_2_TITLE)]
 
 
 def _header_footer(canvas, doc, job_title: str):
@@ -143,16 +176,16 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
 
     story = []
 
-    story.append(Paragraph(f"Job description-{job.title}", _doc_title))
+    story.append(Paragraph(f"Job description-{_esc(job.title)}", _doc_title))
     story.append(Spacer(1, 10))
 
     info_table = Table(
         [
             ["Position Title:", job.title, "Reports To:", jd_content.get("reports_to") or "-"],
-            ["Branch", job.location, "Department", job.department],
-            ["Grade", "", "Date", str(date.today().year)],
+            ["Branch", jd_content.get("branch_label") or job.location, "Department", job.department],
+            ["Grade", jd_content.get("grade") or "", "Date", str(date.today().year)],
             [
-                Paragraph(f"<b>Overall Role Purpose:</b> {jd_content.get('overall_role_purpose', '')}", _body),
+                Paragraph(f"<b>Overall Role Purpose:</b> {_esc(jd_content.get('overall_role_purpose', ''))}", _body),
                 "",
                 "",
                 "",
@@ -186,7 +219,7 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
         ]
     ]
     for item in jd_content.get("key_responsibilities", []):
-        left = Paragraph(f"<u>{item.get('heading', '')}</u><br/>{_numbered(item.get('bullets', []))}", _body)
+        left = Paragraph(f"<u>{_esc(item.get('heading', ''))}</u><br/>{_numbered(item.get('bullets', []))}", _body)
         pct = Paragraph(f"{item.get('pct_time', 0)}%", _body)
         right = Paragraph(_numbered(item.get("criteria", [])), _body)
         kr_rows.append([left, pct, right])
@@ -210,15 +243,15 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
     other_rows = [
         [
             Paragraph("<b>Reporting Relationships:</b> Indicate the jobs that report to this position.", _body),
-            Paragraph(jd_content.get("reporting_relationships") or "-", _body),
+            Paragraph(_esc(jd_content.get("reporting_relationships")) or "-", _body),
         ],
         [
             Paragraph("<b>Decision Making Mandates/Constraints:</b>", _body),
-            Paragraph(jd_content.get("decision_making_mandates") or "-", _body),
+            Paragraph(_esc(jd_content.get("decision_making_mandates")) or "-", _body),
         ],
         [
             Paragraph("<b>Planning Responsibility:</b>", _body),
-            Paragraph(jd_content.get("planning_responsibility") or "-", _body),
+            Paragraph(_esc(jd_content.get("planning_responsibility")) or "-", _body),
         ],
         [
             Paragraph(
@@ -226,7 +259,7 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
                 "with as part of this role:",
                 _body,
             ),
-            Paragraph(jd_content.get("relationship_management") or "-", _body),
+            Paragraph(_esc(jd_content.get("relationship_management")) or "-", _body),
         ],
     ]
     other_table = Table(other_rows, colWidths=[9 * cm, 8 * cm])
@@ -279,7 +312,7 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
     story.append(Spacer(1, 14))
 
     competency_lines = [Paragraph("<b>Performance and Behavioral Competencies</b>", _body), Spacer(1, 4)]
-    for name, desc in BEHAVIORAL_COMPETENCIES:
+    for name, desc in _competencies(jd_content):
         competency_lines.append(Paragraph(f"&#8658;&nbsp; <b>{name}</b> – {desc}", _body))
         competency_lines.append(Spacer(1, 3))
     competency_table = Table([[competency_lines]], colWidths=[17 * cm])
@@ -320,29 +353,31 @@ def render_jd_pdf(*, job: "JobOpening", jd_content: dict, output_path) -> None:
         )
     )
     story.append(Spacer(1, 24))
+    approvers = _approvers(jd_content)
     story.append(
         KeepTogether(
             [
                 Paragraph("<b>APPROVALS</b>", _body),
                 Spacer(1, 24),
                 Paragraph(
-                    f"_______________________  Date: _____________<br/><b>{APPROVER_1_NAME}</b><br/>{APPROVER_1_TITLE}",
+                    f"_______________________  Date: _____________<br/><b>{_esc(approvers[0][0])}</b><br/>{_esc(approvers[0][1])}",
                     _body,
                 ),
             ]
         )
     )
-    story.append(Spacer(1, 24))
-    story.append(
-        KeepTogether(
-            [
-                Paragraph(
-                    f"_______________________  Date: _____________<br/><b>{APPROVER_2_NAME}</b><br/>{APPROVER_2_TITLE}",
-                    _body,
-                )
-            ]
+    for name, title in approvers[1:]:
+        story.append(Spacer(1, 24))
+        story.append(
+            KeepTogether(
+                [
+                    Paragraph(
+                        f"_______________________  Date: _____________<br/><b>{_esc(name)}</b><br/>{_esc(title)}",
+                        _body,
+                    )
+                ]
+            )
         )
-    )
 
     doc.build(
         story,

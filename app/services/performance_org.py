@@ -23,6 +23,7 @@ from app.models.performance import (
     PerformanceLevel,
     PerformanceRole,
     PerformanceUnit,
+    StaffUnitCoverage,
     Region,
     StaffProfile,
     UnitRegionLink,
@@ -52,6 +53,11 @@ def build_structure(db: Session, scope: PerformanceScope, include_inactive: bool
     def visible(profile_id: str | None) -> str | None:
         return profile_id if profile_id in seen else None
 
+    covers: dict[str, list[str]] = {}
+    for pid, uid in db.query(StaffUnitCoverage.profile_id, StaffUnitCoverage.unit_id):
+        if pid in seen:
+            covers.setdefault(pid, []).append(uid)
+
     people = []
     for p in sorted(profiles, key=lambda x: x.full_name.lower()):
         role = roles.get(p.performance_role_id)
@@ -59,14 +65,16 @@ def build_structure(db: Session, scope: PerformanceScope, include_inactive: bool
             "id": p.id, "full_name": p.full_name, "role_key": role.key if role else "", "role_name": role.name if role else None,
             "department": role.department if role else None, "level_label": levels.get(p.level_id) if p.level_id else None,
             "is_executive": p.is_executive, "status": scope.display_status(p), "is_active": p.is_active,
-            "unit_id": p.unit_id, "manager_id": visible(p.manager_id),
+            "unit_id": p.unit_id, "manager_id": visible(p.manager_id), "covers": covers.get(p.id, []),
         })
 
     unit_rows = db.query(PerformanceUnit).filter(PerformanceUnit.is_active.is_(True)).order_by(PerformanceUnit.name).all()
-    occupied = {p.unit_id for p in profiles if p.unit_id}
+    occupied = {p.unit_id for p in profiles if p.unit_id} | {uid for ids in covers.values() for uid in ids}
     if scope.visible_ids is not None:
-        unit_rows = [u for u in unit_rows if u.id in occupied or visible(u.manager_profile_id)]
-    units = [{"id": u.id, "name": u.name, "kind": u.kind, "manager_profile_id": visible(u.manager_profile_id), "region_id": region_of.get(u.id)} for u in unit_rows]
+        keep = {u.id for u in unit_rows if u.id in occupied or visible(u.manager_profile_id)}
+        keep |= {u.parent_unit_id for u in unit_rows if u.id in keep and u.parent_unit_id}  # a unit under a branch brings its branch with it
+        unit_rows = [u for u in unit_rows if u.id in keep]
+    units = [{"id": u.id, "name": u.name, "kind": u.kind, "manager_profile_id": visible(u.manager_profile_id), "region_id": region_of.get(u.id), "parent_unit_id": u.parent_unit_id} for u in unit_rows]
 
     kept_regions = {u["region_id"] for u in units if u["region_id"]}
     region_rows = db.query(Region).filter(Region.is_active.is_(True)).order_by(Region.name).all()
@@ -213,7 +221,8 @@ REGION_PROPOSAL: list[tuple[str, list[str]]] = [
     ("CENTRAL", ["Ruiru", "Thika", "Karatina"]),
 ]
 # Places that aren't public branches but need a home for staff and results.
-EXTRA_UNITS: list[tuple[str, str]] = [("Head Office", "head_office"), ("Check-off", "team"), ("Debt Collection", "team")]
+# Debt collection is deliberately not here: every branch has its own debt collection staff account, placed in that branch.
+EXTRA_UNITS: list[tuple[str, str]] = [("Head Office", "head_office"), ("Check-off", "team")]
 
 
 def _norm(name: str) -> str:
@@ -337,6 +346,9 @@ def apply_setup(db: Session, layout: list[dict[str, Any]], effective_from: date 
             open_link = db.query(UnitRegionLink).filter(UnitRegionLink.unit_id == unit.id, UnitRegionLink.effective_to.is_(None)).first()
             if open_link is None:
                 db.add(UnitRegionLink(unit_id=unit.id, region_id=region.id, effective_from=start))
+                from app.services.performance_units import follow_parent_region
+
+                follow_parent_region(db, unit, region.id, start)
                 res.links_created += 1
             elif open_link.region_id != region.id:
                 res.conflicts.append(f"{unit.name} is already in another region and was not moved.")

@@ -29,7 +29,8 @@ from app.schemas.performance import (
 from app.services import performance_org as org
 from app.services import performance_placement as placement
 from app.services import performance_units as units_svc
-from app.models.performance import PerformanceUnit
+from app.models.performance import PerformanceUnit, StaffProfile
+from app.services import performance_coverage as coverage
 from app.services.auth import get_current_admin
 from app.services.performance_config import log_audit
 from app.services.performance_scope import get_performance_scope
@@ -50,6 +51,41 @@ def org_structure(include_inactive: bool = False, db: Session = Depends(get_db),
     """Flat people / units / regions for the chain-of-command views, limited to the people the caller may see."""
     scope = get_performance_scope(current_admin, db)
     return org.build_structure(db, scope, include_inactive)
+
+
+@router.post("/org-setup/debt-collection-units", dependencies=[admin_only])
+def add_debt_collection_units(db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
+    """Gives every branch its own Debt Collection unit (under the branch, in its region). Safe to run again."""
+    result = units_svc.ensure_debt_collection_units(db)
+    log_audit(db, current_admin.username, "debt_collection_units_added", "performance_unit", None, result)
+    return result
+
+
+class CoverageBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    unit_ids: list[str] = Field(default_factory=list, max_length=coverage.MAX_EXTRA_UNITS)
+
+
+@router.get("/staff/{profile_id}/coverage", dependencies=[admin_or_hr])
+def get_staff_coverage(profile_id: str, db: Session = Depends(get_db)):
+    """The extra units someone works in besides their main one (a debt collector covering several branches)."""
+    profile = db.get(StaffProfile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Staff profile not found.")
+    return coverage.read(db, profile)
+
+
+@router.put("/staff/{profile_id}/coverage", dependencies=[admin_or_hr])
+def set_staff_coverage(profile_id: str, payload: CoverageBody, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
+    profile = db.get(StaffProfile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Staff profile not found.")
+    try:
+        result = coverage.replace(db, profile, payload.unit_ids, current_admin.username)
+    except coverage.CoverageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    log_audit(db, current_admin.username, "staff_coverage_set", "staff_profile", profile.id, {"units": [u["id"] for u in result["units"]]})
+    return result
 
 
 @router.get("/org-health", response_model=OrgHealthResponse, dependencies=[admin_or_hr])

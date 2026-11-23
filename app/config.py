@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     # works regardless and needs no Google setup at all.
     google_service_account_json: str | None = None
 
+    # Formal JD saves normally just WARN when "% of time" doesn't total 100 (see
+    # app/services/jd_validation.py) so nothing that worked before is rejected.
+    # Set JD_ENFORCE_TOTAL_100=true to make the save endpoint refuse such JDs.
+    jd_enforce_total_100: bool = False
+
     # --- Outbound candidate email notifications --------------------------
     # All optional. When smtp_host is unset, the notification system skips
     # sending and logs a "skipped_not_configured" entry instead of raising

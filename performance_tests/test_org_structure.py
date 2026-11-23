@@ -141,7 +141,7 @@ def test_proposal_matches_all_eleven_current_branches_in_4_4_3(client, db, w):
     assert [(r["name"], len(r["branch_ids"])) for r in pre["regions"]] == [("N. RIFT", 4), ("N. EAST", 4), ("CENTRAL", 3)]
     assert pre["unmatched"] == [] and len(pre["branches"]) == 11
     assert all(b["proposed_region"] for b in pre["branches"])  # no current branch is left out
-    assert {e["name"] for e in pre["extra_units"]} == {"Head Office", "Check-off", "Debt Collection"}
+    assert {e["name"] for e in pre["extra_units"]} == {"Head Office", "Check-off"}
 
 
 def test_preview_names_what_cannot_be_matched(client, db, w):
@@ -164,7 +164,7 @@ def test_apply_builds_units_regions_and_links_and_is_idempotent(client, db, w):
     branches = add_branches(db)
     before = sorted((b.id, b.name) for b in db.query(Branch))
     first = apply(client, w).json()
-    assert first["units_created"] == 11 + 3 and first["regions_created"] == 3 and first["links_created"] == 11 and first["conflicts"] == []
+    assert first["units_created"] == 11 + 2 and first["regions_created"] == 3 and first["links_created"] == 11 and first["conflicts"] == []
     assert sorted((b.id, b.name) for b in db.query(Branch)) == before  # the public branches table is only READ
     assert db.query(PerformanceUnit).filter(PerformanceUnit.branch_id.is_not(None)).count() == 11
     assert apply(client, w).json() == {"units_created": 0, "units_linked": 0, "regions_created": 0, "links_created": 0, "conflicts": []}
@@ -237,7 +237,7 @@ def test_level_seeding_is_idempotent_and_never_overwrites_an_edit(db, w):
     assert seed_levels(db) == 0
     db.refresh(dse1)
     assert (dse1.label, dse1.default_targets) == ("DSE 1 (edited)", {"sales": 111})
-    assert db.query(PerformanceLevel).count() == 7
+    assert db.query(PerformanceLevel).count() == 8
 
 
 def test_disciplinary_ladder_is_restricted_and_the_old_generic_warning_is_gone(client, db, w):

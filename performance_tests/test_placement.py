@@ -85,3 +85,29 @@ def test_a_loop_is_refused(client, db):
     # lo1 reports to bm1; making bm1 report to lo1 would loop
     r = client.post(B + "/placement/apply", json={"items": [{"profile_id": w.p.bm1.id, "manager_id": w.p.lo1.id}], "confirm": True}, headers=w.h["admin1"])
     assert r.status_code == 400 and "loop" in r.json()["detail"]
+
+
+def test_a_collector_in_a_branch_with_no_debt_unit_yet_goes_to_the_branch_never_to_one_global_debt_collection_team(client, db):
+    """There is no single Debt Collection team: each branch has its own unit (see test_debt_collection). Where a branch has none yet, a collector
+    goes to the branch itself, and even an old global 'Debt Collection' unit is never used."""
+    w = build_world(client, db)
+    branch = Branch(name="Embu", address="x", hours="x", phone="0", lat=0.0, lng=0.0)
+    db.add(branch)
+    db.flush()
+    embu = PerformanceUnit(name="Embu", kind="branch", branch_id=branch.id)
+    legacy = PerformanceUnit(name="Debt Collection", kind="team")
+    db.add_all([embu, legacy])
+    db.flush()
+    user = AdminUser(username="debt.embu", password_hash="x", role="staff", branch_id=branch.id)
+    db.add(user)
+    db.flush()
+    dr = role(db, "debt_recovery")
+    with_login = StaffProfile(full_name="Debt Collection Embu", performance_role_id=dr.id, admin_user_id=user.id)
+    no_branch = StaffProfile(full_name="Debt Collection Nowhere", performance_role_id=dr.id)
+    db.add_all([with_login, no_branch])
+    db.commit()
+    r = client.get(B + "/placement", headers=w.h["hr1"]).json()
+    rows = {x["name"]: x for x in r["proposals"]}
+    assert rows["Debt Collection Embu"]["unit_name"] == "Embu"
+    assert "Debt Collection Nowhere" not in rows and "Debt Collection Nowhere" in [x["name"] for x in r["unplaced"]]
+    assert all(x["unit_name"] != "Debt Collection" for x in r["proposals"])

@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.career_application import CareerApplication
 from app.models.job_opening import JobOpening
+from app.config import get_settings
 from app.schemas.job_description import JDContent, JDResponse, JDUpdateRequest
+from app.services.jd_validation import jd_warnings, total_pct_time
 from app.schemas.job_opening import (
     AdminJobOpeningListResponse,
     JobOpeningCreate,
@@ -151,7 +153,10 @@ def get_job_description(job_id: str, db: Session = Depends(get_db)) -> JDRespons
     job = db.query(JobOpening).filter(JobOpening.id == job_id).first()
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found.")
-    return JDResponse(data=JDContent.model_validate(job.jd_content) if job.jd_content else None)
+    if not job.jd_content:
+        return JDResponse(data=None)
+    content = JDContent.model_validate(job.jd_content)
+    return JDResponse(data=content, warnings=jd_warnings(content.model_dump()))
 
 
 @router.put("/{job_id}/jd", response_model=JDResponse)
@@ -168,10 +173,23 @@ def save_job_description(job_id: str, payload: JDUpdateRequest, db: Session = De
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job posting not found.")
 
-    job.jd_content = payload.jd_content.model_dump()
+    content = payload.jd_content.model_dump()
+    warnings = jd_warnings(content)
+
+    # Off by default: a JD that doesn't total 100% still saves (with a warning),
+    # exactly as before. JD_ENFORCE_TOTAL_100=true turns that into a refusal.
+    if get_settings().jd_enforce_total_100:
+        total = total_pct_time(content["key_responsibilities"])
+        if total != 100:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Key responsibilities add up to {total}% of time; they must total 100%.",
+            )
+
+    job.jd_content = content
     db.commit()
     db.refresh(job)
-    return JDResponse(data=JDContent.model_validate(job.jd_content))
+    return JDResponse(data=JDContent.model_validate(job.jd_content), warnings=warnings)
 
 
 @router.get("/{job_id}/jd/pdf")

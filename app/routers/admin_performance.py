@@ -236,6 +236,7 @@ def _unit_read(unit: PerformanceUnit, link: UnitRegionLink | None, regions: dict
         kind=unit.kind,
         branch_id=unit.branch_id,
         manager_profile_id=unit.manager_profile_id,
+        parent_unit_id=unit.parent_unit_id,
         region_id=region.id if region else None,
         region_name=region.name if region else None,
         is_active=unit.is_active,
@@ -543,8 +544,21 @@ def create_unit(payload: UnitCreate, db: Session = Depends(get_db), current_admi
     if db.query(PerformanceUnit).filter(PerformanceUnit.name == payload.name.strip()).first() is not None:
         raise HTTPException(status_code=409, detail="A unit with that name already exists.")
     _check_unit_links(db, payload.branch_id, payload.manager_profile_id)
-    unit = PerformanceUnit(name=payload.name.strip(), kind=payload.kind, branch_id=payload.branch_id, manager_profile_id=payload.manager_profile_id)
+    parent = None
+    if payload.parent_unit_id is not None:
+        parent = db.get(PerformanceUnit, payload.parent_unit_id)
+        if parent is None or not parent.is_active:
+            raise HTTPException(status_code=400, detail="That parent unit doesn't exist or is closed.")
+        if parent.parent_unit_id is not None:
+            raise HTTPException(status_code=400, detail="A unit can only sit one level under a branch.")
+    unit = PerformanceUnit(name=payload.name.strip(), kind=payload.kind, branch_id=payload.branch_id, manager_profile_id=payload.manager_profile_id,
+                           parent_unit_id=parent.id if parent else None)
     db.add(unit)
+    db.flush()
+    if parent is not None:  # in the same region as the branch it sits under
+        link = db.query(UnitRegionLink).filter(UnitRegionLink.unit_id == parent.id, UnitRegionLink.effective_to.is_(None)).first()
+        if link is not None:
+            db.add(UnitRegionLink(unit_id=unit.id, region_id=link.region_id, effective_from=link.effective_from))
     db.commit()
     db.refresh(unit)
     log_audit(db, current_admin.username, "unit_created", "performance_unit", unit.id, {"name": unit.name})
@@ -592,6 +606,9 @@ def assign_unit_region(unit_id: str, payload: UnitRegionAssign, db: Session = De
         open_link.effective_to = start - timedelta(days=1)
     if payload.region_id is not None:
         db.add(UnitRegionLink(unit_id=unit.id, region_id=payload.region_id, effective_from=start))
+    from app.services.performance_units import follow_parent_region
+
+    follow_parent_region(db, unit, payload.region_id, start)  # what sits under a branch moves with it
     db.commit()
     log_audit(db, current_admin.username, "unit_region_changed", "performance_unit", unit.id, {"region_id": payload.region_id, "from": start.isoformat()})
     link = _current_region_links(db, {unit.id}).get(unit.id)

@@ -31,6 +31,7 @@ from app.schemas.performance import (
     VersionSummary,
 )
 from app.services import performance_ai as ai
+from app.services import performance_jd_import as jd_import
 from app.services import performance_roles as roles
 from app.services import performance_upload as upload
 from app.services.auth import get_current_admin
@@ -128,16 +129,25 @@ async def extract_jd(
     request: Request,
     filename: str = Query(..., min_length=1, max_length=200, description="Original file name; used only to check the extension."),
     regenerate: bool = False,
+    force_ai: bool = Query(False, description="Skip the exact layout reader and always use AI (DOCX files in the house layout are otherwise read directly)."),
     db: Session = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin),
 ):
     """
-    Body = the raw PDF/DOCX bytes. Returns a DRAFT JD extracted by AI; nothing is saved and the
-    file itself is never stored. The type is decided from the content, not from Content-Type.
+    Body = the raw PDF/DOCX bytes. Returns a DRAFT JD; nothing is saved and the file itself is never
+    stored. The type is decided from the content, not from Content-Type.
+
+    A DOCX in the company's JD layout is read DIRECTLY from its tables (exact, free, no AI key needed,
+    nothing leaves the server). Anything else - a PDF, a free-form document - goes to AI as before.
     """
     data = await upload.read_limited(request.stream(), declared_length=request.headers.get("content-length"))
     kind = upload.sniff_kind(data, filename)
     text = await run_in_threadpool(upload.extract_text, kind, data)
+    if kind == "docx" and not force_ai:
+        local = await run_in_threadpool(jd_import.read_docx, data)
+        if local is not None:
+            log_audit(db, current_admin.username, "jd_read_from_docx", "performance_role", None, {"reader": local["ai"]["prompt_version"]})
+            return local
     redacted = upload.redact_for_ai(text)
     try:
         result = await run_in_threadpool(ai.extract_jd_draft, db, redacted, current_admin.username, regenerate=regenerate)
