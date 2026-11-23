@@ -388,7 +388,7 @@ def read_config(db: Session = Depends(get_db)):
     return ConfigRead(config=cfg, version=version)
 
 
-@router.put("/config", response_model=ConfigUpdateResponse, dependencies=[admin_only])
+@router.put("/config", response_model=ConfigUpdateResponse, dependencies=[admin_or_hr])
 def update_config(payload: ConfigUpdate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     try:
         cfg, version = save_org_config(db, payload.config, current_admin.username)
@@ -409,7 +409,7 @@ def list_scales(db: Session = Depends(get_db)):
     return ScaleListResponse(items=items)
 
 
-@router.post("/scales", response_model=ScaleWriteResponse, status_code=201, dependencies=[admin_only])
+@router.post("/scales", response_model=ScaleWriteResponse, status_code=201, dependencies=[admin_or_hr])
 def create_scale(payload: ScaleCreate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     """Adds a NEW effective-dated scale. Past scales are never edited, so closed periods never change."""
     try:
@@ -430,7 +430,7 @@ def create_scale(payload: ScaleCreate, db: Session = Depends(get_db), current_ad
     return ScaleWriteResponse(message="Rating scale saved.", data=data)
 
 
-@router.post("/scales/preview", response_model=ScalePreviewResponse, dependencies=[admin_only])
+@router.post("/scales/preview", response_model=ScalePreviewResponse, dependencies=[admin_or_hr])
 def preview_scale(payload: ScalePreviewRequest, db: Session = Depends(get_db)):
     """What would these thresholds do to the supplied scores, compared with today's? Writes nothing."""
     current = performance_scales.scale_as_of(db)
@@ -463,7 +463,7 @@ def _check_overrides(overrides: dict | None) -> None:
             raise HTTPException(status_code=400, detail=f"Invalid role override: {exc}") from exc
 
 
-@router.post("/roles", response_model=PerformanceRoleWriteResponse, status_code=201, dependencies=[admin_only])
+@router.post("/roles", response_model=PerformanceRoleWriteResponse, status_code=201, dependencies=[admin_or_hr])
 def create_role(payload: PerformanceRoleCreate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     ensure_defaults(db)
     key = _slug(payload.key or payload.name)
@@ -483,7 +483,7 @@ def create_role(payload: PerformanceRoleCreate, db: Session = Depends(get_db), c
     return PerformanceRoleWriteResponse(message="Performance role created.", data=_role_read(db, role))
 
 
-@router.patch("/roles/{role_id}", response_model=PerformanceRoleWriteResponse, dependencies=[admin_only])
+@router.patch("/roles/{role_id}", response_model=PerformanceRoleWriteResponse, dependencies=[admin_or_hr])
 def update_role(role_id: str, payload: PerformanceRoleUpdate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     role = db.get(PerformanceRole, role_id)
     if role is None:
@@ -502,7 +502,7 @@ def update_role(role_id: str, payload: PerformanceRoleUpdate, db: Session = Depe
     return PerformanceRoleWriteResponse(message="Performance role updated.", data=_role_read(db, role))
 
 
-@router.delete("/roles/{role_id}", response_model=PerformanceRoleWriteResponse, dependencies=[admin_only])
+@router.delete("/roles/{role_id}", response_model=PerformanceRoleWriteResponse, dependencies=[admin_or_hr])
 def delete_role(role_id: str, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     role = db.get(PerformanceRole, role_id)
     if role is None:

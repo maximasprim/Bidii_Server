@@ -263,10 +263,18 @@ def test_seeded_levels_carry_the_numbers_from_the_hr_induction_deck(client, db, 
     assert by_label["DSE1"]["staff_count"] == 1
 
 
-@pytest.mark.parametrize("who", ["lo1", "bm1", "hr1", "ceo"])
-def test_level_writes_are_admin_only(client, w, who):
+@pytest.mark.parametrize("who", ["lo1", "bm1", "ceo"])
+def test_level_writes_are_admin_or_hr_only(client, w, who):
     assert client.post(f"{BASE}/levels", json={"role_id": w.role.id, "label": "X"}, headers=w.h[who]).status_code == 403
     assert client.patch(f"{BASE}/levels/{w.levels['dse1']}", json={"label": "X"}, headers=w.h[who]).status_code == 403
+
+
+def test_hr_can_create_and_update_a_level(client, w):
+    h = w.h["hr1"]
+    made = client.post(f"{BASE}/levels", json={"role_id": w.role.id, "label": "HR Level", "rank": 9, "default_targets": {"sales": 100000}}, headers=h)
+    assert made.status_code == 201, made.text
+    lid = made.json()["data"]["id"]
+    assert client.patch(f"{BASE}/levels/{lid}", json={"label": "HR Level B"}, headers=h).status_code == 200
 
 
 def test_level_create_update_and_validation(client, db, w):

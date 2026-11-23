@@ -15,11 +15,39 @@ from app.models.role_permission import RolePermission
 from app.services.performance_config import ensure_defaults
 from app.services.performance_levels import seed_levels
 from app.services.performance_roles import seed_role_templates
-from app.services.role_permissions import PERFORMANCE_DEFAULT_PATHS
+from app.services.role_permissions import PERFORMANCE_DEFAULT_PATHS, PERFORMANCE_SETTINGS_PATH, PERFORMANCE_SETTINGS_ROLES
 
 logger = logging.getLogger("bidii.performance")
 
 MENU_MIGRATION_KEY = "menu_migration"
+
+
+def append_settings_menu_for_hr(db: Session) -> int:
+    """
+    HR can now view and edit the performance settings. Defaults only reach HR if an admin never customised it, so this adds the
+    settings menu to a customised HR role, once (recorded in the same marker, so a later untick is respected). Additive only.
+    Returns the number of rows changed.
+    """
+    marker = db.get(PerformanceConfig, MENU_MIGRATION_KEY)
+    done = set((marker.value or {}).get("appended", [])) if marker else set()
+    todo = [r for r in PERFORMANCE_SETTINGS_ROLES if f"{r}:{PERFORMANCE_SETTINGS_PATH}" not in done]
+    if not todo:
+        return 0
+    changed = 0
+    for role in todo:
+        row = db.query(RolePermission).filter(RolePermission.role == role).first()
+        menus = list(row.allowed_menus or []) if row is not None else []
+        if row is not None and PERFORMANCE_SETTINGS_PATH not in menus:
+            row.allowed_menus = [*menus, PERFORMANCE_SETTINGS_PATH]
+            row.updated_by = "system:performance-module"
+            changed += 1
+    value = {"appended": sorted(done | {f"{r}:{PERFORMANCE_SETTINGS_PATH}" for r in todo})}
+    if marker is None:
+        db.add(PerformanceConfig(key=MENU_MIGRATION_KEY, value=value, version=1, updated_by="system"))
+    else:
+        marker.value = value
+    db.commit()
+    return changed
 
 
 def append_menus_to_role_overrides(db: Session) -> int:
@@ -97,3 +125,6 @@ def bootstrap_performance(db: Session) -> None:
     changed = append_menus_to_role_overrides(db)
     if changed:
         logger.info("Performance menus appended to %d saved role override(s).", changed)
+    hr_changed = append_settings_menu_for_hr(db)
+    if hr_changed:
+        logger.info("Performance Settings menu added to the saved HR role.")

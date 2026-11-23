@@ -16,7 +16,9 @@ def test_defaults_include_performance_menus_for_every_role():
         assert "/admin/my-performance" in menus, role
         assert "/admin/performance" in menus, role
     assert "staff" in rp.CONFIGURABLE_ROLES
-    assert "/admin/performance-settings" not in rp.DEFAULT_MENU_ACCESS["hr"]  # admin always has it
+    # admin always has the settings menu; HR can view and edit the settings, so it is in HR's defaults and nobody else's
+    assert "/admin/performance-settings" in rp.DEFAULT_MENU_ACCESS["hr"]
+    assert all("/admin/performance-settings" not in menus for role, menus in rp.DEFAULT_MENU_ACCESS.items() if role != "hr")
 
 
 def test_existing_menus_are_never_removed_or_reordered(db):
@@ -81,3 +83,45 @@ def test_role_permissions_endpoint_lists_the_new_menus_and_staff_role(client, db
     assert r.status_code == 200, r.text
     body = r.text
     assert "/admin/my-performance" in body and "/admin/performance-settings" in body and '"staff"' in body
+
+
+# ---- HR gets the settings menu (once) ------------------------------------------------------------------------------------
+
+
+def test_a_customised_hr_role_gets_the_settings_menu_once_and_nothing_is_removed(db):
+    db.add(RolePermission(role="hr", allowed_menus=["/admin/ats", "/admin/jobs"]))
+    db.add(RolePermission(role="loan_officer", allowed_menus=["/admin/loans"]))
+    db.commit()
+    assert boot.append_settings_menu_for_hr(db) == 1
+    rows = _rows(db)
+    assert rows["hr"] == ["/admin/ats", "/admin/jobs", "/admin/performance-settings"]
+    assert rows["loan_officer"] == ["/admin/loans"]  # only HR is touched
+    assert boot.append_settings_menu_for_hr(db) == 0  # once
+
+
+def test_an_admin_who_later_removes_the_settings_menu_from_hr_is_not_overruled(db):
+    db.add(RolePermission(role="hr", allowed_menus=["/admin/ats"]))
+    db.commit()
+    boot.append_settings_menu_for_hr(db)
+    hr = db.query(RolePermission).filter_by(role="hr").one()
+    hr.allowed_menus = ["/admin/ats"]  # deliberately unticked
+    db.commit()
+    assert boot.append_settings_menu_for_hr(db) == 0
+    assert _rows(db)["hr"] == ["/admin/ats"]
+
+
+def test_hr_without_a_saved_role_is_left_to_the_defaults_and_the_step_does_not_repeat(db):
+    assert boot.append_settings_menu_for_hr(db) == 0
+    assert db.query(RolePermission).count() == 0
+    assert boot.append_settings_menu_for_hr(db) == 0
+
+
+def test_the_two_menu_steps_do_not_undo_each_other(db):
+    db.add(RolePermission(role="hr", allowed_menus=["/admin/ats"]))
+    db.commit()
+    boot.append_menus_to_role_overrides(db)
+    boot.append_settings_menu_for_hr(db)
+    again = _rows(db)
+    assert boot.append_menus_to_role_overrides(db) == 0 and boot.append_settings_menu_for_hr(db) == 0
+    assert _rows(db) == again
+    assert again["hr"] == ["/admin/ats", "/admin/my-performance", "/admin/performance", "/admin/performance-settings"]

@@ -18,7 +18,7 @@ from starlette.concurrency import run_in_threadpool
 from app.database import get_db
 from app.models.admin_user import AdminUser
 from app.models.performance import PerformanceKpi, PerformanceRole, PerformanceRoleVersion
-from app.routers.admin_performance import admin_only, manage_access
+from app.routers.admin_performance import admin_or_hr, manage_access
 from app.schemas.performance import (
     JDExtractResponse,
     JDOptions,
@@ -111,7 +111,7 @@ def get_version(role_id: str, version: int, db: Session = Depends(get_db)):
     return _detail(db, role, found)
 
 
-@router.put("/roles/{role_id}/jd", response_model=RoleVersionRead, dependencies=[admin_only])
+@router.put("/roles/{role_id}/jd", response_model=RoleVersionRead, dependencies=[admin_or_hr])
 def save_jd(role_id: str, payload: RoleVersionSave, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     """Saves the JD + KPIs + sign-off chain. Updates the current version while unused; creates the next once it is locked."""
     role = _role_or_404(db, role_id)
@@ -124,7 +124,7 @@ def save_jd(role_id: str, payload: RoleVersionSave, db: Session = Depends(get_db
     return _detail(db, role, version, created_new=created_new)
 
 
-@router.post("/ai/extract-jd", response_model=JDExtractResponse, dependencies=[admin_only, ai_rate_limit])
+@router.post("/ai/extract-jd", response_model=JDExtractResponse, dependencies=[admin_or_hr, ai_rate_limit])
 async def extract_jd(
     request: Request,
     filename: str = Query(..., min_length=1, max_length=200, description="Original file name; used only to check the extension."),
@@ -159,7 +159,7 @@ async def extract_jd(
     return result
 
 
-@router.post("/ai/suggest-kpis", response_model=KpiSuggestResponse, dependencies=[admin_only, ai_rate_limit])
+@router.post("/ai/suggest-kpis", response_model=KpiSuggestResponse, dependencies=[admin_or_hr, ai_rate_limit])
 def suggest_kpis(payload: KpiSuggestRequest, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     """Proposed KPI rows (a draft). Weights come from the responsibilities, never from the AI; a rules proposal is used if AI is unavailable."""
     errors: list[str] = []

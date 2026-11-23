@@ -82,11 +82,14 @@ PERFORMANCE_MENU_REGISTRY: list[tuple[str, str]] = [
 # Generic access role for people who only need the performance module (e.g. a
 # Credit Risk Analyst with no other dashboard duties).
 PERFORMANCE_ROLE = "staff"
-# Menus every role gets by default when the module is on. The settings menu is
-# deliberately absent: "admin" always has every menu, nobody else needs it.
+# Menus every role gets by default when the module is on. The settings menu is left out
+# for everyone except HR (see PERFORMANCE_SETTINGS_ROLES): "admin" always has every menu.
 # "/admin/performance" is shown to everyone because what a person can see inside
 # it is decided by get_performance_scope from the database, not by this menu.
 PERFORMANCE_DEFAULT_PATHS: list[str] = ["/admin/my-performance", "/admin/performance"]
+# HR can view and edit the performance settings (job roles, KPIs, rating scales), so they get that menu too.
+PERFORMANCE_SETTINGS_PATH = "/admin/performance-settings"
+PERFORMANCE_SETTINGS_ROLES: tuple[str, ...] = ("hr",)
 
 if get_settings().performance_module_enabled:
     MENU_REGISTRY.extend(PERFORMANCE_MENU_REGISTRY)
@@ -96,6 +99,8 @@ if get_settings().performance_module_enabled:
     for _role in list(DEFAULT_MENU_ACCESS):
         DEFAULT_MENU_ACCESS[_role] = [*DEFAULT_MENU_ACCESS[_role], *PERFORMANCE_DEFAULT_PATHS]
     DEFAULT_MENU_ACCESS[PERFORMANCE_ROLE] = list(PERFORMANCE_DEFAULT_PATHS)
+    for _role in PERFORMANCE_SETTINGS_ROLES:
+        DEFAULT_MENU_ACCESS[_role] = [*DEFAULT_MENU_ACCESS[_role], PERFORMANCE_SETTINGS_PATH]
     
 
 @dataclass

@@ -24,7 +24,7 @@ from app.models.performance import (
     StaffProfile,
     TargetChangeRequest,
 )
-from app.routers.admin_performance import _profile_in_scope, admin_only, admin_or_hr, manage_access
+from app.routers.admin_performance import _profile_in_scope, admin_or_hr, manage_access
 from app.schemas.performance import (
     BulkTargetRequest,
     BulkTargetResponse,
@@ -81,7 +81,7 @@ def list_levels(role_id: str | None = None, include_inactive: bool = False, db: 
     return LevelListResponse(items=[_level_read(db, l) for l in q.order_by(PerformanceLevel.role_id, PerformanceLevel.rank).all()])
 
 
-@router.post("/levels", response_model=LevelWriteResponse, status_code=201, dependencies=[admin_only])
+@router.post("/levels", response_model=LevelWriteResponse, status_code=201, dependencies=[admin_or_hr])
 def create_level(payload: LevelCreate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     if db.get(PerformanceRole, payload.role_id) is None:
         raise HTTPException(status_code=400, detail="That job role doesn't exist.")
@@ -100,7 +100,7 @@ def create_level(payload: LevelCreate, db: Session = Depends(get_db), current_ad
     return LevelWriteResponse(message="Level created.", data=_level_read(db, level))
 
 
-@router.patch("/levels/{level_id}", response_model=LevelWriteResponse, dependencies=[admin_only])
+@router.patch("/levels/{level_id}", response_model=LevelWriteResponse, dependencies=[admin_or_hr])
 def update_level(level_id: str, payload: LevelUpdate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     level = db.get(PerformanceLevel, level_id)
     if level is None:

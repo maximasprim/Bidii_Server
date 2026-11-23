@@ -282,12 +282,19 @@ def test_client_content_type_is_ignored_and_filename_is_never_a_path(client, org
     assert lying.status_code == 415  # claiming application/pdf doesn't make it one
 
 
-@pytest.mark.parametrize("who", ["lo1", "bm1", "gm", "ceo", "hr1"])
-def test_ai_endpoints_are_admin_only(client, org, fake, who):
+@pytest.mark.parametrize("who", ["lo1", "bm1", "gm", "ceo"])
+def test_ai_endpoints_are_admin_or_hr_only(client, org, fake, who):
     assert extract(client, org, make_pdf(JD_LINES), who=who).status_code == 403
     body = {"responsibilities": [{"title": "A", "weight_pct": 100}]}
     assert client.post(f"{BASE}/ai/suggest-kpis", json=body, headers=org.h[who]).status_code == 403
     assert fake.calls == 0
+
+
+def test_hr_can_use_the_ai_endpoints(client, org, fake):
+    assert extract(client, org, make_pdf(JD_LINES), who="hr1").status_code == 200
+    fake.reply = json.dumps({"kpis": [{"responsibility_index": 0, "label": "K"}]})
+    body = {"responsibilities": [{"title": "A", "weight_pct": 100}]}
+    assert client.post(f"{BASE}/ai/suggest-kpis", json=body, headers=org.h["hr1"]).status_code == 200
 
 
 # ---- rate limiting -------------------------------------------------------------------------------------------------

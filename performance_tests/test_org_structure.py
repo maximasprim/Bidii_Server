@@ -329,3 +329,25 @@ def test_structure_leaves_inactive_people_out_unless_asked_for(client, db, w):
     db.commit()
     ids = lambda **kw: {x["id"] for x in structure(client, w, "hr1", **kw)["people"]}  # noqa: E731
     assert w.p.lo3.id not in ids() and w.p.lo3.id in ids(include_inactive="true")
+
+
+def test_preview_follows_the_regions_you_have_actually_set_up(client, db, w):
+    """After branches are placed, the preview shows YOUR grouping (not the built-in starting proposal), incl. new regions and moves."""
+    add_branches(db)
+    apply(client, w)
+    west = Region(name="WEST")
+    db.add(west)
+    db.flush()
+    thika = db.query(PerformanceUnit).filter_by(name="Thika").one()
+    link = db.query(UnitRegionLink).filter_by(unit_id=thika.id, effective_to=None).one()
+    link.region_id = west.id
+    db.commit()
+
+    preview = client.get(f"{BASE}/org-setup/preview", headers=w.h["admin1"]).json()
+    by_region = {r["name"]: {b["name"] for b in preview["branches"] if b["branch_id"] in r["branch_ids"]} for r in preview["regions"]}
+    assert by_region["WEST"] == {"Thika"}
+    assert "Thika" not in by_region["CENTRAL"] and "Ruiru" in by_region["CENTRAL"]
+    assert preview["unmatched"] == []
+    # applying exactly what it shows changes nothing and reports no conflict
+    again = client.post(f"{BASE}/org-setup/apply", json={"regions": [{"name": r["name"], "branch_ids": r["branch_ids"]} for r in preview["regions"]]}, headers=w.h["admin1"]).json()
+    assert again["links_created"] == 0 and again["conflicts"] == []

@@ -243,6 +243,12 @@ def match_branch(name: str, branches: list[Branch]) -> Branch | None:
 
 
 def setup_preview(db: Session) -> dict[str, Any]:
+    """
+    What "apply" would do. Once any branch is already placed in a region, the preview shows the REAL current grouping (what you set up
+    in Regions and branches), so it never contradicts your own changes; branches not yet in a region are listed as
+    unplaced for you to put somewhere. The built-in starting proposal (REGION_PROPOSAL) is used only on a first-time
+    setup, when no branch has been placed in a region yet.
+    """
     branches = db.query(Branch).order_by(Branch.name.asc()).all()
     unit_by_branch = {u.branch_id: u for u in db.query(PerformanceUnit).filter(PerformanceUnit.branch_id.is_not(None))}
     existing_regions = {r.name for r in db.query(Region)}
@@ -250,16 +256,29 @@ def setup_preview(db: Session) -> dict[str, Any]:
     proposed_region: dict[str, str] = {}
     regions: list[dict[str, Any]] = []
     unmatched: list[str] = []
-    for region_name, names in REGION_PROPOSAL:
-        ids: list[str] = []
-        for n in names:
-            b = match_branch(n, branches)
-            if b is None:
-                unmatched.append(n)
-            else:
-                ids.append(b.id)
-                proposed_region[b.id] = region_name
-        regions.append({"name": region_name, "branch_ids": ids, "exists": region_name in existing_regions})
+
+    placed_units = {uid for (uid,) in db.query(UnitRegionLink.unit_id).filter(UnitRegionLink.effective_to.is_(None))}
+    if any(u.id in placed_units for u in unit_by_branch.values()):
+        branch_of_unit = {u.id: bid for bid, u in unit_by_branch.items()}
+        region_name = {r.id: r.name for r in db.query(Region)}
+        ids_by_region: dict[str, list[str]] = {name: [] for name in sorted(existing_regions)}
+        for unit_id, region_id in db.query(UnitRegionLink.unit_id, UnitRegionLink.region_id).filter(UnitRegionLink.effective_to.is_(None)):
+            bid = branch_of_unit.get(unit_id)
+            if bid is not None and region_id in region_name:
+                ids_by_region[region_name[region_id]].append(bid)
+                proposed_region[bid] = region_name[region_id]
+        regions = [{"name": n, "branch_ids": ids, "exists": True} for n, ids in ids_by_region.items()]
+    else:
+        for region_name_, names in REGION_PROPOSAL:
+            ids: list[str] = []
+            for n in names:
+                b = match_branch(n, branches)
+                if b is None:
+                    unmatched.append(n)
+                else:
+                    ids.append(b.id)
+                    proposed_region[b.id] = region_name_
+            regions.append({"name": region_name_, "branch_ids": ids, "exists": False})
     return {
         "branches": [
             {"branch_id": b.id, "name": b.name, "unit_id": unit_by_branch[b.id].id if b.id in unit_by_branch else None,

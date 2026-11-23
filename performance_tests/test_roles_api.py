@@ -46,10 +46,16 @@ def test_everyone_with_the_menu_can_read_how_a_role_is_measured(client, db, org)
     assert body["effective_signoff_chain"] == ["staff", "manager", "rm_gm", "hr"]
 
 
-@pytest.mark.parametrize("who", ["lo1", "bm1", "gm", "ceo", "hr1"])
-def test_only_admins_can_save_a_jd(client, db, org, who):
+@pytest.mark.parametrize("who", ["lo1", "bm1", "gm", "ceo"])
+def test_only_admins_and_hr_can_save_a_jd(client, db, org, who):
     rid = role_id(db, "loan_officer")
     assert client.put(f"{BASE}/roles/{rid}/jd", json=save_body(), headers=org.h[who]).status_code == 403
+
+
+def test_hr_can_save_a_jd(client, db, org):
+    rid = role_id(db, "loan_officer")
+    saved = client.put(f"{BASE}/roles/{rid}/jd", json=save_body(), headers=org.h["hr1"])
+    assert saved.status_code == 200, saved.text
 
 
 def test_jd_options_lists_the_allowed_values(client, org):

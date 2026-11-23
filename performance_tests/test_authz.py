@@ -102,13 +102,17 @@ def test_user_without_a_profile_gets_an_empty_me(client, db, org):
 # ---- admin-only surfaces -------------------------------------------------------------------------
 
 
-ADMIN_ONLY = [
+# The performance settings (config, rating scales, job roles): admin or HR may save them.
+SETTINGS_WRITES = [
     ("PUT", "/config", {"config": {}}),
     ("POST", "/scales", {}),
     ("POST", "/scales/preview", {"categories": []}),
     ("POST", "/roles", {"name": "Hacker Role"}),
     ("PATCH", "/roles/x", {"name": "Zed Name"}),
     ("DELETE", "/roles/x", None),
+]
+
+ADMIN_ONLY = [
     ("POST", "/units", {"name": "Evil Unit"}),
     ("PATCH", "/units/x", {"name": "Evil Unit"}),
     ("PUT", "/units/x/region", {}),
@@ -123,6 +127,32 @@ ADMIN_ONLY = [
 def test_admin_only_routes_reject_everyone_else(client, org, who, method, path, body):
     resp = client.request(method, BASE + path, json=body, headers=org.h[who])
     assert resp.status_code == 403, f"{who} {method} {path} -> {resp.status_code}"
+
+
+@pytest.mark.parametrize("method,path,body", SETTINGS_WRITES)
+@pytest.mark.parametrize("who", ["lo1", "bm1", "gm", "ceo"])
+def test_settings_writes_reject_everyone_but_admin_and_hr(client, org, who, method, path, body):
+    resp = client.request(method, BASE + path, json=body, headers=org.h[who])
+    assert resp.status_code == 403, f"{who} {method} {path} -> {resp.status_code}"
+
+
+@pytest.mark.parametrize("method,path,body", SETTINGS_WRITES)
+def test_hr_is_let_through_to_the_settings_writes(client, org, method, path, body):
+    resp = client.request(method, BASE + path, json=body, headers=org.h["hr1"])
+    assert resp.status_code not in (401, 403), f"hr {method} {path} -> {resp.status_code}"  # may still be 400/404/422 for these junk bodies
+
+
+def test_hr_can_add_edit_and_remove_a_job_role_and_save_the_config(client, org):
+    h = org.h["hr1"]
+    created = client.post(f"{BASE}/roles", json={"name": "Debt Collection Manager", "department": "Commercial"}, headers=h)
+    assert created.status_code == 201, created.text
+    rid = created.json()["data"]["id"]
+    assert created.json()["data"]["department"] == "Commercial"
+    renamed = client.patch(f"{BASE}/roles/{rid}", json={"name": "Debt Collections Manager"}, headers=h)
+    assert renamed.status_code == 200 and renamed.json()["data"]["name"] == "Debt Collections Manager"
+    assert client.delete(f"{BASE}/roles/{rid}", headers=h).status_code == 200
+    cfg = client.get(f"{BASE}/config", headers=h).json()["config"]
+    assert client.put(f"{BASE}/config", json={"config": cfg}, headers=h).status_code == 200
 
 
 @pytest.mark.parametrize("who", ["lo1", "bm1", "gm", "ceo"])
@@ -390,8 +420,9 @@ def test_unit_and_region_name_uniqueness(client, org):
     assert client.post(f"{BASE}/units", json={"name": "Kasarani", "kind": "branch"}, headers=h).status_code == 201
 
 
-def test_scales_endpoints_admin_flow(client, org):
-    h = org.h["admin1"]
+@pytest.mark.parametrize("who", ["admin1", "hr1"])
+def test_scales_endpoints_admin_and_hr_flow(client, org, who):
+    h = org.h[who]
     cats = [{"key": k, "label": k, "min_score": m} for k, m in zip(
         ["above_expectation", "meeting_expectation", "approaching_expectation", "below_expectation"], [125, 95, 65, 0])]
     bands = [{"rating": r, "label": str(r), "min_pct": m} for r, m in zip([5, 4, 3, 2, 1], [120, 100, 80, 60, 0])]
