@@ -362,3 +362,23 @@ Debt collection is a unit **under each branch** ("Karatina Debt Collection"), no
 * Both paths run the same `performance_roles.validate_jd` rules and return problems as `warnings` (weights not totalling 100, a responsibility with no criteria, missing purpose/qualifications/competencies). Nothing is silently "fixed".
 * Not imported: approvers and reporting relationships (set in the app). The competency list is whatever the document contains.
 * Tests: `performance_tests/test_jd_docx_import.py` (real JDs in `performance_tests/fixtures/jds/` plus layout-mutation cases).
+
+
+## Outlook chart and saved plans
+
+On a person's report (and My Performance) the **Outlook** card plots, month by month, as a percentage of target:
+
+* **Actual** - the scored months (the last 12 months to today, so it carries on across the year end).
+* **Projection** - the next 3 months from the same method as the projections above, with a shaded 90% range from the person's own month-to-month swing. Needs at least 3 scored months.
+* **Path needed** - a straight line from the latest month to a goal (default Meeting Expectation) over 3-6 months. It is arithmetic: what would have to happen. It is not a prediction, and the AI never writes these numbers.
+* **Saved plan** - once a manager or HR saves a plan, its goal and path are frozen in `performance_plans` and drawn as a fourth line; later months are compared with it ("on track", "behind", "goal reached", or "ended without reaching the goal").
+
+Endpoints (prefix `/api/admin/performance/insights`): `GET /outlook/me`, `GET /outlook/person/{id}`, `POST /plans`, `GET /plans/person/{id}`, `POST /plans/{id}/close`.
+
+* **Who can save or end a plan:** managers and HR/admin for people they can see. Not the executive view, and not someone setting their own plan (HR/admin excepted). The person can see their own plan's goal and path, but not the manager's note or who saved it.
+* **The server computes the path.** `POST /plans` takes only the person, optional goal and length, an optional suggestion id and a note; any other field is refused.
+* **One active plan per person**, enforced by the database (unique `profile_id` + `active_slot`). Saving the same plan again changes nothing; saving a different one closes the old one as "superseded" and keeps how it stood. Ending a plan keeps its history and how it stood that day.
+* **A plan never changes a score, rating, status or PIP**, and never writes to the suggestion's own `outcome` (the follow-up check owns that).
+* **If saved plans can't be read** the chart still loads (`plans_unavailable`).
+* **Anonymising a person** removes the notes on their plans; the goal and path numbers stay as anonymous statistics.
+* Tests: `performance_tests/test_outlook.py`, `performance_tests/test_plans.py`.

@@ -26,7 +26,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -789,3 +789,40 @@ class ImportVersion(Base):
     unposted_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     unposted_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PerformancePlan(Base):
+    """
+    An improvement plan someone saved from the Outlook chart: the goal and the month-by-month path needed to reach it, frozen on the day it was
+    saved so later months can be plotted against it. It records a decision; it never changes a score, rating, status or PIP.
+
+    One ACTIVE plan per person: `active_slot` is 1 while active and NULL otherwise, and the unique index on (profile_id, active_slot) makes the
+    database refuse a second active plan even if two people save at the same moment (NULLs never clash, so any number of past plans are kept).
+    `recommendation_id` and `profile_id` are plain id strings, like the other tables here, so nothing blocks deleting or anonymising a person.
+    """
+
+    __tablename__ = "performance_plans"
+    __table_args__ = (
+        Index("ix_plan_one_active", "profile_id", "active_slot", unique=True),
+        Index("ix_plan_profile_created", "profile_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    profile_id: Mapped[str] = mapped_column(String(36))
+    recommendation_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(12), default="active")  # active | closed | superseded
+    active_slot: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    goal_pct: Mapped[float] = mapped_column(Float)
+    goal_label: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    start_month: Mapped[str] = mapped_column(String(7))  # last scored month when saved, YYYY-MM
+    start_pct: Mapped[float] = mapped_column(Float)
+    plan_months: Mapped[int] = mapped_column(Integer)
+    path: Mapped[list] = mapped_column(JSON, default=list)  # [{"month": "2026-11", "pct": 54.0}, ...] first item is the start month
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_by_username: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    closed_by_username: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    close_reason: Mapped[str | None] = mapped_column(String(12), nullable=True)  # manual | superseded
+    close_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # how it stood on the day it was closed

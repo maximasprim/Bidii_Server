@@ -2,6 +2,8 @@
 Staff Performance - projections, suggestions and AI advice (Phase 4a).  Prefix /api/admin/performance/insights
 
   GET   /projection/me | /projection/person/{id} | /projection/unit/{id} | /projection/region/{id} | /projection/organisation
+  GET   /outlook/me | /outlook/person/{id}   month-by-month chart series: actual, projection (with range) and the path needed to reach a goal
+  POST  /plans   save the goal and path as a plan | GET /plans/person/{id} history | POST /plans/{id}/close
   GET   /recommendations            what I may see (?status=open|all, ?entity_type=, ?entity_id=)
   POST  /recommendations/generate   manager / HR: run the rules for my reporting line (HR/admin: everyone)
   PATCH /recommendations/{id}       acknowledge | action | dismiss (a note is needed to dismiss); assignee and due date for managers
@@ -16,15 +18,18 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.admin_user import AdminUser
-from app.models.performance import PerformanceUnit, Recommendation, StaffProfile
+from app.models.performance import PerformancePlan, PerformanceUnit, Recommendation, StaffProfile
 from app.routers.admin_performance import my_access
 from app.services import performance_advice as advice
+from app.services import performance_outlook as outlook
+from app.services import performance_plans as plans
 from app.services.auth import get_current_admin
 from app.services import performance_insights as ins
 from app.services import performance_reports as pr
@@ -114,6 +119,132 @@ def projection_org(admin: AdminUser = Depends(get_current_admin), db: Session = 
     if scope.visible_ids is not None:
         raise _NOT_FOUND
     return _group_payload(db, scope, [i for (i,) in db.query(StaffProfile.id)])
+
+
+# ---- outlook chart (actual / projection / path needed) and saved plans -------------------------------------------------------
+
+
+class PlanSave(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str = Field(min_length=1, max_length=36)
+    goal_pct: float | None = Field(default=None, gt=0, le=300)
+    months: int = Field(default=3, ge=1, le=outlook.MAX_PLAN_MONTHS)
+    recommendation_id: str | None = Field(default=None, max_length=36)
+    note: str | None = Field(default=None, max_length=500)
+
+
+class PlanClose(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    note: str | None = Field(default=None, max_length=500)
+
+
+def _can_manage_plan(scope: PerformanceScope, profile_id: str) -> bool:
+    """Managers and HR/admin for people they can see; never the executive view, and never someone setting their own plan (HR/admin excepted)."""
+    if scope.read_only or not scope.can_see(profile_id):
+        return False
+    return not (profile_id == scope.own_profile_id and not (scope.is_admin or scope.is_hr))
+
+
+def _rolling_ctx(db: Session, profile_id: str) -> tuple[pr.Ctx, list[dict[str, Any]]]:
+    """The last 12 months to today (not 'year to date'), so the chart and a saved plan carry on across the year end."""
+    today = today_nairobi()
+    y, m0 = divmod(today.year * 12 + today.month - 12, 12)
+    period = pr.resolve_period(f"{y:04d}-{m0 + 1:02d}..{today.year:04d}-{today.month:02d}", today, _fy(db))
+    ctx = pr.load_ctx(db, [profile_id], period.start, period.end)
+    return ctx, pr.score_many(ctx, [profile_id], period)
+
+
+def _outlook_core(db: Session, profile_id: str, goal_pct: float | None, months: int) -> dict[str, Any]:
+    ctx, people = _rolling_ctx(db, profile_id)
+    if not people:
+        raise _NOT_FOUND
+    person = people[0]
+    if person["headline"] is None:
+        return {"profile_id": profile_id, "name": person["name"], "available": False, "reason": "No sales-type KPI to chart for this role.", "points": [], "projection": {"available": False}, "plan": {"available": False}, "goal_options": []}
+    return {"profile_id": profile_id, "name": person["name"], "headline": person["headline"]["label"], **outlook.build_outlook(person["trend"], ctx.scale.categories, goal_pct, months)}
+
+
+def _outlook_payload(db: Session, scope: PerformanceScope, profile_id: str, goal_pct: float | None, months: int) -> dict[str, Any]:
+    result = _outlook_core(db, profile_id, goal_pct, months)
+    can_manage = _can_manage_plan(scope, profile_id)
+    result["can_manage_plan"] = can_manage
+    result["tracked_plan"] = None
+    try:  # a problem reading saved plans must never take the chart itself down
+        active = plans.active_plan(db, profile_id)
+        if active is not None:
+            result = outlook.attach_saved_plan(result, active.path or [])
+            result["tracked_plan"] = plans.to_json(active, outlook.actuals_by_month(result), can_manage=can_manage)
+    except SQLAlchemyError:
+        db.rollback()
+        result["plans_unavailable"] = True
+    return result
+
+
+@router.get("/outlook/me", dependencies=[my_access])
+def outlook_me(goal_pct: float | None = Query(default=None, gt=0, le=300), months: int = Query(default=3, ge=1, le=outlook.MAX_PLAN_MONTHS), admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
+    scope = get_performance_scope(admin, db)
+    if scope.own_profile_id is None:
+        raise _NOT_FOUND
+    return _outlook_payload(db, scope, scope.own_profile_id, goal_pct, months)
+
+
+@router.get("/outlook/person/{profile_id}", dependencies=[my_access])
+def outlook_person(profile_id: str, goal_pct: float | None = Query(default=None, gt=0, le=300), months: int = Query(default=3, ge=1, le=outlook.MAX_PLAN_MONTHS), admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
+    scope = get_performance_scope(admin, db)
+    if not scope.can_see(profile_id):
+        raise _NOT_FOUND
+    return _outlook_payload(db, scope, profile_id, goal_pct, months)
+
+
+@router.post("/plans", dependencies=[my_access])
+def save_plan(body: PlanSave, response: Response, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
+    scope = get_performance_scope(admin, db)
+    if not scope.can_see(body.profile_id):
+        raise _NOT_FOUND
+    if not _can_manage_plan(scope, body.profile_id):
+        raise HTTPException(status_code=403, detail="You can't save a plan for this person.")
+    if body.recommendation_id:
+        rec = db.get(Recommendation, body.recommendation_id)
+        prof = db.get(StaffProfile, rec.entity_id) if rec is not None and rec.entity_type == "staff" else None
+        if rec is None or prof is None or prof.id != body.profile_id or not ins.can_view(scope, rec, prof):
+            raise HTTPException(status_code=422, detail="That suggestion isn't for this person.")
+    result = _outlook_core(db, body.profile_id, body.goal_pct, body.months)  # the path is worked out here, never taken from the browser
+    try:
+        plan, created = plans.save_plan(db, profile_id=body.profile_id, result=result, recommendation_id=body.recommendation_id, note=body.note, username=admin.username)
+    except plans.PlanError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    if created:
+        log_audit(db, admin.username, "plan.save", "plan", plan.id, {"goal_pct": plan.goal_pct, "months": plan.plan_months, "from_suggestion": bool(plan.recommendation_id)})
+    response.status_code = 201 if created else 200
+    return {"created": created, "plan": plans.to_json(plan, outlook.actuals_by_month(result), can_manage=True)}
+
+
+@router.get("/plans/person/{profile_id}", dependencies=[my_access])
+def plan_history(profile_id: str, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
+    scope = get_performance_scope(admin, db)
+    if not scope.can_see(profile_id):
+        raise _NOT_FOUND
+    can_manage = _can_manage_plan(scope, profile_id)
+    rows = plans.history(db, profile_id)
+    actuals = outlook.actuals_by_month(_outlook_core(db, profile_id, None, 3)) if any(p.status == "active" for p in rows) else {}
+    return {"can_manage": can_manage, "items": [plans.to_json(p, actuals, can_manage=can_manage) for p in rows]}
+
+
+@router.post("/plans/{plan_id}/close", dependencies=[my_access])
+def close_plan(plan_id: str, body: PlanClose, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
+    scope = get_performance_scope(admin, db)
+    plan = db.get(PerformancePlan, plan_id)
+    if plan is None or not scope.can_see(plan.profile_id):
+        raise _NOT_FOUND
+    if not _can_manage_plan(scope, plan.profile_id):
+        raise HTTPException(status_code=403, detail="You can't close this plan.")
+    actuals = outlook.actuals_by_month(_outlook_core(db, plan.profile_id, None, 3))
+    try:
+        plans.close_plan(db, plan, username=admin.username, note=body.note, actuals=actuals)
+    except plans.PlanError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    log_audit(db, admin.username, "plan.close", "plan", plan.id, {"state": (plan.result or {}).get("state")})
+    return {"plan": plans.to_json(plan, None, can_manage=True)}
 
 
 # ---- suggestions ----------------------------------------------------------------------------------------------------------

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.models.performance import (
     Appraisal, AppraisalDispute, AppraisalItem, AppraisalObjective, AppraisalSignoff, DevelopmentNeed, KpiEntry, NoticeAck, PeriodLock,
-    PerformanceAction, PerformanceAuditLog, Recommendation, StaffAssignmentHistory, StaffProfile,
+    PerformanceAction, PerformanceAuditLog, PerformancePlan, Recommendation, StaffAssignmentHistory, StaffProfile,
 )
 from app.services import performance_storage as storage
 from app.services.performance_config import get_org_config
@@ -189,6 +189,9 @@ def anonymise(db: Session, profile: StaffProfile, confirm: str, today: date) -> 
     for r in db.query(Recommendation).filter(Recommendation.entity_type == "staff", Recommendation.entity_id == profile.id):
         r.content = {"detail": "[removed]"}
         r.status_note = None
+    for pl in db.query(PerformancePlan).filter(PerformancePlan.profile_id == profile.id):  # the goal and path are numbers; the manager's notes are text
+        pl.note = pl.close_note = None
+        counts["text_fields"] += 1
     db.query(StaffAssignmentHistory).filter(StaffAssignmentHistory.profile_id == profile.id).update({"reason": None})
     profile.full_name = f"{FORMER}{profile.id[:6]}"
     profile.employee_no = None
