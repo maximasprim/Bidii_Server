@@ -138,6 +138,14 @@ class PlanClose(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+_LIVE = ("active", "probation", "pip")
+
+
+def _is_live(db: Session, profile_id: str) -> bool:
+    prof = db.get(StaffProfile, profile_id)
+    return prof is not None and prof.status in _LIVE and bool(prof.is_active)
+
+
 def _can_manage_plan(scope: PerformanceScope, profile_id: str) -> bool:
     """Managers and HR/admin for people they can see; never the executive view, and never someone setting their own plan (HR/admin excepted)."""
     if scope.read_only or not scope.can_see(profile_id):
@@ -166,7 +174,7 @@ def _outlook_core(db: Session, profile_id: str, goal_pct: float | None, months: 
 
 def _outlook_payload(db: Session, scope: PerformanceScope, profile_id: str, goal_pct: float | None, months: int) -> dict[str, Any]:
     result = _outlook_core(db, profile_id, goal_pct, months)
-    can_manage = _can_manage_plan(scope, profile_id)
+    can_manage = _can_manage_plan(scope, profile_id) and _is_live(db, profile_id)  # no new plans for someone who has left
     result["can_manage_plan"] = can_manage
     result["tracked_plan"] = None
     try:  # a problem reading saved plans must never take the chart itself down
@@ -203,6 +211,8 @@ def save_plan(body: PlanSave, response: Response, admin: AdminUser = Depends(get
         raise _NOT_FOUND
     if not _can_manage_plan(scope, body.profile_id):
         raise HTTPException(status_code=403, detail="You can't save a plan for this person.")
+    if not _is_live(db, body.profile_id):
+        raise HTTPException(status_code=422, detail="This person has left, so a new plan can't be saved for them.")
     if body.recommendation_id:
         rec = db.get(Recommendation, body.recommendation_id)
         prof = db.get(StaffProfile, rec.entity_id) if rec is not None and rec.entity_type == "staff" else None

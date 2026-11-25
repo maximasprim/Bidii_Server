@@ -229,9 +229,15 @@ def save_org_config(db: Session, cfg: dict[str, Any], username: str) -> tuple[di
     return cleaned, row.version
 
 
-def effective_config(db: Session, role) -> dict[str, Any]:
-    """Org config with a role's own overrides layered on top (invalid overrides ignored)."""
-    org, _ = get_org_config(db)
+def effective_config(db: Session, role, org: dict[str, Any] | None = None) -> dict[str, Any]:
+    """
+    Org config with a role's own overrides layered on top (invalid overrides ignored).
+    Pass `org` (from get_org_config) when doing this for many roles, so the org config is read once and not once per role.
+    """
+    if org is None:
+        org, _ = get_org_config(db)
+    else:
+        org = copy.deepcopy(org)  # each role still gets its own copy, exactly as before
     overrides = getattr(role, "config_overrides", None)
     if not overrides:
         return org

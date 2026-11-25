@@ -28,6 +28,7 @@ from app.models.performance import (
     StaffProfile,
     UnitRegionLink,
 )
+from app.services.performance_batch import kpis_by_version, latest_versions
 from app.services.performance_roles import is_configured, kpis_for, latest_version
 from app.services.performance_scope import PerformanceScope
 from app.services.performance_time import today_nairobi
@@ -180,10 +181,12 @@ def org_health(db: Session) -> dict[str, Any]:
     staff_per_role: dict[str, int] = {}
     for p in active:
         staff_per_role[p.performance_role_id] = staff_per_role.get(p.performance_role_id, 0) + 1
+    versions = latest_versions(db, [rid for rid in staff_per_role if roles.get(rid)])
+    role_kpis = kpis_by_version(db, [v.id for v in versions.values() if v is not None])
     for rid, n in staff_per_role.items():
         role = roles.get(rid)
-        version = latest_version(db, rid) if role else None
-        if role and not is_configured(version, kpis_for(db, version.id) if version else []):
+        version = versions.get(rid) if role else None
+        if role and not is_configured(version, role_kpis.get(version.id, []) if version else []):
             add("role_unconfigured", "info", f"{n} active staff are on '{role.name}', which has no complete KPI set yet.", role_id=rid)
 
     staffed_units = {p.unit_id for p in active if p.unit_id}

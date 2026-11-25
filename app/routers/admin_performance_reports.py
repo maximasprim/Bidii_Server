@@ -24,6 +24,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -68,6 +69,20 @@ def _live_ids(db: Session, ids: list[str] | None = None) -> list[str]:
     return [i for (i,) in q]
 
 
+def _leaver_ids(db: Session, ids: list[str] | None = None) -> list[str]:
+    """People who have left or been deactivated. Their months still count towards group totals (never towards people lists or counts)."""
+    q = db.query(StaffProfile.id).filter(or_(StaffProfile.status.notin_(LIVE), StaffProfile.is_active.is_(False)))
+    if ids is not None:
+        q = q.filter(StaffProfile.id.in_(ids))
+    return [i for (i,) in q]
+
+
+def _units_worked_in(ctx: pr.Ctx, ids: list[str], period) -> dict[str, set]:
+    """For each person, every unit they belonged to at some point of the period (same test the scoring uses to keep a unit's months)."""
+    months = pr.months_in(period)
+    return {pid: {pr.unit_at(ctx, ctx.profiles[pid], m) for m in months} for pid in ids if pid in ctx.profiles}
+
+
 def _show_pip(scope: PerformanceScope, person: dict[str, Any], ctx: pr.Ctx) -> bool:
     return scope.can_see_restricted(ctx.profiles[person["profile_id"]])
 
@@ -97,13 +112,13 @@ def _heatmap(ctx: pr.Ctx, people: list[dict[str, Any]], period) -> dict[str, Any
     return {"months": months, "rows": rows}
 
 
-def _by_month(ctx: pr.Ctx, ids: list[str], period, *, unit_filter: str | None = None) -> list[dict[str, Any]]:
+def _by_month(ctx: pr.Ctx, ids: list[str], period, *, unit_filter: str | None = None, leaver_ids: list[str] | None = None) -> list[dict[str, Any]]:
     """Distribution of people across the four categories for each month (replaces their JAN-OCT / H1 sheets)."""
     out = []
     for m in pr.scored_months(period, ctx.today):
         mp = parse_period(m.strftime("%Y-%m"))
         people = pr.score_many(ctx, ids, mp, unit_filter=unit_filter)
-        g = pr.group_summary(ctx, people)
+        g = pr.group_summary(ctx, people, pr.score_many(ctx, leaver_ids or [], mp, unit_filter=unit_filter, cap_at_exit=True))
         out.append({"month": mp.key, "achievement_pct": g["achievement_pct"], "average_score": g["average_score"],
                     "category_counts": g["category_counts"], "legacy_counts": g["legacy_counts"], "scored_people": g["scored_people"],
                     "actual_total": g["actual_total"], "target_total": g["target_total"]})
@@ -186,24 +201,27 @@ def person_report(profile_id: str, period: str = Query(default="ytd", max_length
 # ---- groups ---------------------------------------------------------------------------------------------------------
 
 
-def _group_payload(db: Session, scope: PerformanceScope, ids: list[str], period, *, unit_filter: str | None = None, extra_months: bool = True) -> tuple[pr.Ctx, list[dict[str, Any]], dict[str, Any]]:
-    ctx = pr.load_ctx(db, ids, period.start, period.end)
+def _group_payload(db: Session, scope: PerformanceScope, ids: list[str], period, *, unit_filter: str | None = None, extra_months: bool = True, leaver_ids: list[str] | None = None) -> tuple[pr.Ctx, list[dict[str, Any]], dict[str, Any]]:
+    ctx = pr.load_ctx(db, [*ids, *(leaver_ids or [])], period.start, period.end)
     people = pr.score_many(ctx, ids, period, unit_filter=unit_filter)
-    return ctx, people, pr.group_summary(ctx, people)
+    leavers = pr.score_many(ctx, leaver_ids or [], period, unit_filter=unit_filter, cap_at_exit=True)
+    return ctx, people, pr.group_summary(ctx, people, leavers)
 
 
 def _team_for(db: Session, scope: PerformanceScope, leader_id: str, period_key: str) -> dict[str, Any]:
     if not scope.can_see(leader_id):
         raise _NOT_FOUND
     period = _period(period_key, db)
-    members = _live_ids(db, _visible(scope, pr.reporting_line(db, leader_id)))
+    line = _visible(scope, pr.reporting_line(db, leader_id))
+    members = _live_ids(db, line)
+    leaver_ids = _leaver_ids(db, line)
     ids = [leader_id, *members]
-    ctx, people, _ = _group_payload(db, scope, ids, period)
+    ctx, people, _ = _group_payload(db, scope, ids, period, leaver_ids=leaver_ids)
     by_id = {p["profile_id"]: p for p in people}
     if leader_id not in by_id:
         raise _NOT_FOUND
     team_people = [by_id[i] for i in members if i in by_id]
-    summary = pr.group_summary(ctx, team_people)
+    summary = pr.group_summary(ctx, team_people, pr.score_many(ctx, leaver_ids, period, cap_at_exit=True))
     rows = sorted((_person_row(scope, ctx, p) for p in team_people), key=lambda r: (r["score"] is None, -(r["score"] or 0)))
     return {
         "period": _period_json(period), "scale": _scale_json(ctx), "leader": _person_row(scope, ctx, by_id[leader_id]),
@@ -227,13 +245,14 @@ def _unit_for(db: Session, scope: PerformanceScope, unit_id: str, period_key: st
     if unit is None:
         raise _NOT_FOUND
     period = _period(period_key, db)
-    members = _live_ids(db, pr.unit_member_ids(db, unit_id, period.start, period.end, None if scope.visible_ids is None else set(scope.visible_ids)))
+    ever = pr.unit_member_ids(db, unit_id, period.start, period.end, None if scope.visible_ids is None else set(scope.visible_ids))
+    members = _live_ids(db, ever)
     if not members and scope.visible_ids is not None and unit_id not in scope.managed_unit_ids:
         raise _NOT_FOUND
-    ctx, people, summary = _group_payload(db, scope, members, period, unit_filter=unit_id)
-    all_ids = _live_ids(db)
-    org_ctx = pr.load_ctx(db, all_ids, period.start, period.end)
-    org = pr.group_summary(org_ctx, pr.score_many(org_ctx, all_ids, period))
+    ctx, people, summary = _group_payload(db, scope, members, period, unit_filter=unit_id, leaver_ids=_leaver_ids(db, ever))
+    all_ids, gone_ids = _live_ids(db), _leaver_ids(db)
+    org_ctx = pr.load_ctx(db, [*all_ids, *gone_ids], period.start, period.end)
+    org = pr.group_summary(org_ctx, pr.score_many(org_ctx, all_ids, period), pr.score_many(org_ctx, gone_ids, period, cap_at_exit=True))
     rows = sorted((_person_row(scope, ctx, p) for p in people), key=lambda r: (r["score"] is None, -(r["score"] or 0)))
     small = len(members) < pr.SMALL_UNIT
     return {
@@ -256,19 +275,24 @@ def _region_for(db: Session, scope: PerformanceScope, region_id: str, period_key
     period = _period(period_key, db)
     unit_ids = pr.region_unit_ids(db, region_id, period.end)
     units = {u.id: u for u in db.query(PerformanceUnit).filter(PerformanceUnit.id.in_(unit_ids))} if unit_ids else {}
-    members_by_unit = {uid: _live_ids(db, pr.unit_member_ids(db, uid, period.start, period.end, None if scope.visible_ids is None else set(scope.visible_ids))) for uid in units}
+    ever_by_unit = {uid: pr.unit_member_ids(db, uid, period.start, period.end, None if scope.visible_ids is None else set(scope.visible_ids)) for uid in units}
+    members_by_unit = {uid: _live_ids(db, ever) for uid, ever in ever_by_unit.items()}
+    leavers_by_unit = {uid: _leaver_ids(db, ever) for uid, ever in ever_by_unit.items()}
     all_ids = sorted({i for ids in members_by_unit.values() for i in ids})
-    ctx = pr.load_ctx(db, all_ids, period.start, period.end)
-    branches, everyone = [], []
+    all_leavers = sorted({i for ids in leavers_by_unit.values() for i in ids})
+    ctx = pr.load_ctx(db, [*all_ids, *all_leavers], period.start, period.end)
+    branches, everyone, everyone_left = [], [], []
     for uid, ids in members_by_unit.items():
         people = pr.score_many(ctx, ids, period, unit_filter=uid)
+        left = pr.score_many(ctx, leavers_by_unit[uid], period, unit_filter=uid, cap_at_exit=True)
         everyone += people
-        g = pr.group_summary(ctx, people)
+        everyone_left += left
+        g = pr.group_summary(ctx, people, left)
         branches.append({"unit_id": uid, "name": units[uid].name, "people": g["people"], "achievement_pct": g["achievement_pct"], "average_score": g["average_score"],
                          "category": g["average_category"], "category_counts": g["category_counts"], "actual_total": g["actual_total"], "target_total": g["target_total"],
                          "small_unit": len(ids) < pr.SMALL_UNIT})
     branches.sort(key=lambda b: (b["average_score"] is None, -(b["average_score"] or 0)))
-    return {"period": _period_json(period), "scale": _scale_json(ctx), "region": {"id": region.id, "name": region.name}, "summary": pr.group_summary(ctx, everyone), "branches": branches}
+    return {"period": _period_json(period), "scale": _scale_json(ctx), "region": {"id": region.id, "name": region.name}, "summary": pr.group_summary(ctx, everyone, everyone_left), "branches": branches}
 
 
 @router.get("/region/{region_id}", dependencies=[my_access])
@@ -282,24 +306,28 @@ def _org_for(db: Session, scope: PerformanceScope, period_key: str) -> dict[str,
     period = _period(period_key, db)
     prev = pr.previous_period(period)
     ids = _live_ids(db)
-    ctx = pr.load_ctx(db, ids, prev.start, period.end)
-    ctx.scale = pr.load_ctx(db, [], period.start, period.end).scale  # classify with the scale in force at the END of the period shown
+    gone = _leaver_ids(db)
+    ctx = pr.load_ctx(db, [*ids, *gone], prev.start, period.end)
+    ctx.scale = pr.scale_for_period(db, period.end)  # classify with the scale in force at the END of the period shown
     people = pr.score_many(ctx, ids, period)
     before = {p["profile_id"]: p for p in pr.score_many(ctx, ids, prev)}
-    summary = pr.group_summary(ctx, people)
-    by_month = _by_month(ctx, ids, period)
+    summary = pr.group_summary(ctx, people, pr.score_many(ctx, gone, period, cap_at_exit=True))
+    by_month = _by_month(ctx, ids, period, leaver_ids=gone)
     units = {u.id: u for u in db.query(PerformanceUnit).filter(PerformanceUnit.kind == "branch")}
     members = {uid: [i for i in ids if ctx.profiles[i].unit_id == uid] for uid in units}
+    gone_units = _units_worked_in(ctx, gone, period)  # score each branch's leavers against that branch only, not against every branch
+    gone_in = {uid: [i for i in gone if uid in gone_units.get(i, ())] for uid in units}
     branches, heat = [], []
     for uid, mem in members.items():
         if not mem:
             continue
-        g = pr.group_summary(ctx, pr.score_many(ctx, mem, period, unit_filter=uid))
+        g = pr.group_summary(ctx, pr.score_many(ctx, mem, period, unit_filter=uid), pr.score_many(ctx, gone_in[uid], period, unit_filter=uid, cap_at_exit=True))
         branches.append({"unit_id": uid, "name": units[uid].name, "people": g["people"], "actual_total": g["actual_total"], "target_total": g["target_total"],
                          "achievement_pct": g["achievement_pct"], "average_score": g["average_score"], "category": g["average_category"]})
         cells = []
         for m in pr.scored_months(period, ctx.today):
-            gm = pr.group_summary(ctx, pr.score_many(ctx, mem, parse_period(m.strftime("%Y-%m")), unit_filter=uid))
+            mp = parse_period(m.strftime("%Y-%m"))
+            gm = pr.group_summary(ctx, pr.score_many(ctx, mem, mp, unit_filter=uid), pr.score_many(ctx, gone_in[uid], mp, unit_filter=uid, cap_at_exit=True))
             cells.append(gm["achievement_pct"])
         heat.append({"unit_id": uid, "name": units[uid].name, "cells": cells})
     branches.sort(key=lambda b: (b["achievement_pct"] is None, -(b["achievement_pct"] or 0)))
@@ -336,16 +364,20 @@ def compare(a: str = Query(max_length=30), b: str = Query(max_length=30), unit_i
     elif unit_id:
         if db.get(PerformanceUnit, unit_id) is None:
             raise _NOT_FOUND
-        ids = _live_ids(db, pr.unit_member_ids(db, unit_id, min(pa.start, pb.start), max(pa.end, pb.end), None if scope.visible_ids is None else set(scope.visible_ids)))
+        ever = pr.unit_member_ids(db, unit_id, min(pa.start, pb.start), max(pa.end, pb.end), None if scope.visible_ids is None else set(scope.visible_ids))
+        ids, gone = _live_ids(db, ever), _leaver_ids(db, ever)
         if not ids and scope.visible_ids is not None and unit_id not in scope.managed_unit_ids:
             raise _NOT_FOUND
         unit_filter, label = unit_id, "unit"
     else:
         ids, unit_filter, label = _live_ids(db, _visible(scope, _live_ids(db)) if scope.visible_ids is not None else None), None, "everyone you can see"
-    ctx = pr.load_ctx(db, ids, min(pa.start, pb.start), max(pa.end, pb.end))
+        gone = _leaver_ids(db, _visible(scope, _leaver_ids(db)) if scope.visible_ids is not None else None)
+    if profile_id:
+        gone = []
+    ctx = pr.load_ctx(db, [*ids, *gone], min(pa.start, pb.start), max(pa.end, pb.end))
     out = {}
     for tag, p in (("a", pa), ("b", pb)):
-        g = pr.group_summary(ctx, pr.score_many(ctx, ids, p, unit_filter=unit_filter))
+        g = pr.group_summary(ctx, pr.score_many(ctx, ids, p, unit_filter=unit_filter), pr.score_many(ctx, gone, p, unit_filter=unit_filter, cap_at_exit=True))
         out[tag] = {"period": _period_json(p), **{k: g[k] for k in ("people", "achievement_pct", "average_score", "average_category", "category_counts", "legacy_counts", "actual_total", "target_total")}}
     def delta(k):
         x, y = out["a"][k], out["b"][k]

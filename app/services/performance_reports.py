@@ -45,6 +45,7 @@ from app.models.performance import (
     StaffProfile,
     UnitRegionLink,
 )
+from app.services.performance_batch import kpis_by_version, latest_versions
 from app.services.performance_config import effective_config, get_org_config
 from app.services.performance_periods import Period, PeriodError, month_end, months_in, parse_period
 from app.services.performance_roles import kpis_for, latest_version
@@ -139,10 +140,14 @@ def load_ctx(db: Session, profile_ids: list[str], start: date, end: date, *, tod
     ctx.profiles = {p.id: p for p in db.query(StaffProfile).filter(StaffProfile.id.in_(ids)).all()}
     role_ids = {p.performance_role_id for p in ctx.profiles.values()}
     ctx.roles = {r.id: r for r in db.query(PerformanceRole).filter(PerformanceRole.id.in_(role_ids)).all()}
-    for rid, role in ctx.roles.items():
-        version = latest_version(db, rid)
-        ctx.role_kpis[rid] = kpis_for(db, version.id) if version else []
-        ctx.cfg[rid] = effective_config(db, role)
+    if ctx.roles:  # a fixed number of queries however many roles there are (it used to be several per role)
+        org_cfg, _ = get_org_config(db)
+        versions = latest_versions(db, list(ctx.roles))
+        kpis = kpis_by_version(db, [v.id for v in versions.values() if v is not None])
+        for rid, role in ctx.roles.items():
+            version = versions.get(rid)
+            ctx.role_kpis[rid] = kpis.get(version.id, []) if version is not None else []
+            ctx.cfg[rid] = effective_config(db, role, org=org_cfg)
     for e in db.query(KpiEntry).filter(KpiEntry.profile_id.in_(ids), KpiEntry.month >= first_of_month(start), KpiEntry.month <= first_of_month(end)):
         ctx.entries[(e.profile_id, e.kpi_key, e.month)] = (Decimal(e.value), e.status)
     for t in db.query(PerformanceTarget).filter(PerformanceTarget.profile_id.in_(ids), PerformanceTarget.effective_from <= first_of_month(end)).order_by(PerformanceTarget.effective_from, PerformanceTarget.created_at):
@@ -249,8 +254,11 @@ def is_headline(k: PerformanceKpi) -> bool:
     return k.source == "kpi_entry" and k.unit == "kes" and k.direction == "higher"
 
 
-def score_person(ctx: Ctx, profile_id: str, period: Period, *, unit_filter: str | None = None) -> dict[str, Any]:
-    """The full result for one person over one period. `unit_filter` keeps only the months they belonged to that unit."""
+def score_person(ctx: Ctx, profile_id: str, period: Period, *, unit_filter: str | None = None, cap_at_exit: bool = False) -> dict[str, Any]:
+    """
+    The full result for one person over one period. `unit_filter` keeps only the months they belonged to that unit.
+    `cap_at_exit` stops counting after the month they left (used for people who have left, so a month typed after exit never counts).
+    """
     profile = ctx.profiles[profile_id]
     role_id = profile.performance_role_id
     cfg = ctx.cfg.get(role_id) or get_org_config_defaults()
@@ -259,6 +267,9 @@ def score_person(ctx: Ctx, profile_id: str, period: Period, *, unit_filter: str 
     months = scored_months(period, ctx.today)
     if unit_filter is not None:
         months = [m for m in months if unit_at(ctx, profile, m) == unit_filter]
+    if cap_at_exit and profile.exit_date is not None:
+        last_month = first_of_month(profile.exit_date)
+        months = [m for m in months if m <= last_month]
     kpis = ctx.role_kpis.get(role_id, [])
     appraisal = _appraisal_for(ctx, profile_id, period.start, period.end)
     results: list[dict[str, Any]] = []
@@ -344,9 +355,29 @@ def public(person: dict[str, Any]) -> dict[str, Any]:
 # ---- groups ----------------------------------------------------------------------------------------------------------
 
 
-def group_summary(ctx: Ctx, people: list[dict[str, Any]]) -> dict[str, Any]:
-    """Roll-up (sum actual / sum target), target-weighted average score, and where the people land."""
-    roll = rollup((p["_head_actual"], p["_head_target"]) for p in people if p["headline"] is not None)
+def leaver_row(ctx: Ctx, person: dict[str, Any]) -> dict[str, Any]:
+    """What one person who has left contributes to a group's totals (nothing here is anyone's private working data)."""
+    prof = ctx.profiles[person["profile_id"]]
+    head = person["headline"]
+    months = [t["month"] for t in person["trend"] if t.get("state") == "scored"]
+    return {
+        "profile_id": person["profile_id"], "name": person["name"], "role_name": person["role_name"],
+        "reason": "left" if prof.status == "exited" else "deactivated", "exit_date": prof.exit_date.isoformat() if prof.exit_date else None,
+        "months_counted": len(months), "first_month": months[0] if months else None, "last_month": months[-1] if months else None,
+        "actual": head["actual"], "target": head["target"], "pct": head["pct"],
+    }
+
+
+def group_summary(ctx: Ctx, people: list[dict[str, Any]], leavers: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """
+    Roll-up (sum actual / sum target), target-weighted average score, and where the people land.
+    `leavers` are people who have left: the months they worked still count towards the KES totals and the achievement %, so a result
+    does not change when someone exits. They are NOT counted as people and do not feed the average score or the category counts.
+    """
+    scored_leavers = [p for p in (leavers or []) if p["headline"] is not None]
+    mine = rollup((p["_head_actual"], p["_head_target"]) for p in people if p["headline"] is not None)  # current people: the counts below
+    roll = rollup((p["_head_actual"], p["_head_target"]) for p in [*people, *scored_leavers] if p["headline"] is not None) if scored_leavers else mine  # KES totals and %
+    leaver_roll = rollup((p["_head_actual"], p["_head_target"]) for p in scored_leavers) if scored_leavers else None
     cats = ctx.scale.categories
     counts = {c["key"]: 0 for c in cats}
     legacy = {b: 0 for b in LEGACY_BANDS}
@@ -372,15 +403,17 @@ def group_summary(ctx: Ctx, people: list[dict[str, Any]]) -> dict[str, Any]:
         "people": len(people),
         "achievement_pct": float(round2(roll.pct)) if roll.pct is not None else None,
         "actual_total": float(roll.actual_total), "target_total": float(roll.target_total),
-        "scored_people": roll.scored, "no_target": roll.excluded_no_target, "unreported": roll.unreported,
+        "scored_people": mine.scored, "no_target": mine.excluded_no_target, "unreported": mine.unreported,
+        "leavers_included": leaver_roll.scored if leaver_roll else 0,
+        "leavers": sorted((leaver_row(ctx, p) for p in scored_leavers), key=lambda r: r["name"].lower()),
         "average_score": float(round2(avg)) if avg is not None else None,
         "average_category": classify_score(avg, cats),
         "category_counts": counts, "legacy_counts": legacy, "unscored": unscored,
     }
 
 
-def score_many(ctx: Ctx, profile_ids: list[str], period: Period, *, unit_filter: str | None = None) -> list[dict[str, Any]]:
-    return [score_person(ctx, pid, period, unit_filter=unit_filter) for pid in profile_ids if pid in ctx.profiles]
+def score_many(ctx: Ctx, profile_ids: list[str], period: Period, *, unit_filter: str | None = None, cap_at_exit: bool = False) -> list[dict[str, Any]]:
+    return [score_person(ctx, pid, period, unit_filter=unit_filter, cap_at_exit=cap_at_exit) for pid in profile_ids if pid in ctx.profiles]
 
 
 def attention_reasons(person: dict[str, Any], cfg: dict[str, Any], show_pip: bool) -> list[str]:

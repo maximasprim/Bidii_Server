@@ -382,3 +382,20 @@ Endpoints (prefix `/api/admin/performance/insights`): `GET /outlook/me`, `GET /o
 * **If saved plans can't be read** the chart still loads (`plans_unavailable`).
 * **Anonymising a person** removes the notes on their plans; the goal and path numbers stay as anonymous statistics.
 * Tests: `performance_tests/test_outlook.py`, `performance_tests/test_plans.py`.
+
+## People who have left
+
+Branch, region, organisation and team totals (the KES actual and target, and the achievement %) include the months a person worked before they left, so a result does not change when someone exits.
+
+* **What counts:** every verified month they were in that unit, up to and including the month of their `exit_date` (a month typed after their exit never counts). "Left" means a status other than active / probation / PIP, or a deactivated profile.
+* **What does not change:** they are not listed as a person, not counted in "People", and do not feed the average score or the category mix. Those describe the current team.
+* **On screen:** the Achievement card says "includes N who have left" when this applies, and a **Staff who have left** card lists each of them (when they left, the months counted, actual and target, achievement) with a total of what they add. In the Team and Branch / unit tabs a row opens that person's details. No new improvement plan can be saved for someone who has left.
+* **Compare, month-by-month and region/organisation branch tables** follow the same rule. Individual reports, snapshots and recommendations are unchanged.
+* Tests: `performance_tests/test_leavers.py`.
+
+## Speed notes
+
+* **Report setup is a fixed number of queries.** `load_ctx` reads the organisation settings once and every role's current JD and KPIs in two queries (`performance_batch.py`), instead of several queries per role. The org health check does the same. Answers are identical; `test_speed.py` checks both that and that the query count does not grow with the number of roles.
+* **Organisation report:** it no longer builds a second data set just to read the rating scale, and each branch's leavers are scored only against the branches they worked in.
+* **Staff page:** the search waits 300 ms after you stop typing, and the role and manager lists are fetched on first load and after a save, not on every keystroke.
+* **Report pages** show the last copy of a report you opened (same signed-in person, same period and choices, under 5 minutes old) while the fresh one loads, then replace it. Kept in memory only.
