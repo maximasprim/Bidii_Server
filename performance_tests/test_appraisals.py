@@ -624,7 +624,7 @@ def test_pdf_mirrors_the_paper_form_and_is_an_attachment(client, w):
     assert r.status_code == 200 and r.content.startswith(b"%PDF-") and r.headers["content-type"] == "application/pdf"
     assert r.headers["content-disposition"] == f'attachment; filename="appraisal-{aid[:8]}.pdf"' and r.headers["cache-control"] == "no-store"
     text = " ".join(pdf_text(r.content).split())  # header cells wrap onto several lines
-    for expected in ("A. Job objectives", "C. Measurement criteria", "G. Manager assessment", "Officer One", "Q1 2026", "Sales - loan value disbursed", "Rating guide", "Solid quarter", "Immediate manager"):
+    for expected in ("Job Objectives for the Period", "Measurement Criteria", "Manager Assessment", "Part A: Performance Assessment Section", "Assessment Guide", "Part C: Training Requirements", "Officer One", "Q1 2026", "Sales - loan value disbursed", "Rating guide", "Solid quarter", "Immediate manager"):
         assert expected in text, expected
 
 
@@ -639,7 +639,7 @@ def test_the_blank_template_has_the_roles_rows_and_no_names(client, w):
     r = client.get(f"{BASE}/roles/{w.role.id}/appraisal-template.pdf", headers=w.h["lo1"])
     assert r.status_code == 200 and r.headers["content-disposition"] == 'attachment; filename="appraisal-template-loan_officer.pdf"'
     text = " ".join(pdf_text(r.content).split())
-    assert "Blank form" in text and "Customers deactivated or balanced off" in text and "Quality (PAR)" in text and "Officer One" not in text
+    assert "Job Role: Loan Officer" in text and "Status" not in text and "Customers deactivated or balanced off" in text and "Quality (PAR)" in text and "Officer One" not in text
     cra = w.role_of("credit_risk_analyst").id
     assert "Putting customers first" in pdf_text(client.get(f"{BASE}/roles/{cra}/appraisal-template.pdf", headers=w.h["lo1"]).content)
     fresh = client.post(f"{BASE}/roles", json={"name": "Brand New"}, headers=w.h["admin1"]).json()["data"]["id"]
@@ -719,7 +719,7 @@ def test_pdf_labels_are_drawn_in_a_readable_colour_not_white_on_white(client, w)
     data = client.get(f"{BASE}/appraisals/{aid}/pdf", headers=w.h["lo1"]).content
     content = PdfReader(io.BytesIO(data)).pages[0].get_contents().get_data().decode("latin-1")
     # Find each header label and look at the fill colour set immediately before it was drawn.
-    for label in ("Name", "Position", "Period", "Branch / team", "Immediate manager", "Status"):
+    for label in ("Name:", "Staff No.:", "Position:", "My Manager:", "Branch/Dept:", "Years/Months Worked:"):
         idx = content.find(f"({label})")
         assert idx > 0, label
         colour = re.findall(r"([\d.]+) ([\d.]+) ([\d.]+) rg", content[:idx])[-1]

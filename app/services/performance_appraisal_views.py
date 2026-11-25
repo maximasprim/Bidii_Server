@@ -74,7 +74,7 @@ def detail(db: Session, ap: Appraisal, profile: StaffProfile, resolver: pa.Actor
     mgr_total = sum((Decimal(i.weight) * Decimal(i.manager_rating) / 100 for i in parts.items if i.manager_rating is not None), Decimal(0)) if any(i.manager_rating is not None for i in parts.items) else None
     return {
         "id": ap.id,
-        "profile": {"id": profile.id, "full_name": profile.full_name, "role_name": role.name if role else None, "unit_name": unit.name if unit else None, "manager_name": manager.full_name if manager else None},
+        "profile": {"id": profile.id, "full_name": profile.full_name, "employee_no": profile.employee_no, "hire_date": profile.hire_date, "role_name": role.name if role else None, "unit_name": unit.name if unit else None, "manager_name": manager.full_name if manager else None},
         "period_key": ap.period_key, "period_label": period.label, "period_start": ap.period_start, "period_end": ap.period_end,
         "status": ap.status, "current_step": ap.current_step, "current_step_label": pa.STEP_LABEL.get(ap.current_step) if ap.current_step else None,
         "chain": chain_view(ap, parts),

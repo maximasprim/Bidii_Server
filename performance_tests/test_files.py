@@ -272,8 +272,9 @@ def test_blank_docx_template_has_the_paper_columns(client, world):
     r = client.get(f"{BASE}/roles/{world.role.id}/appraisal-template.docx", headers=world.h["hr1"])
     assert r.status_code == 200 and r.content[:2] == b"PK"
     doc = Document(io.BytesIO(r.content))
-    heads = [c.text for c in doc.tables[1].rows[0].cells]
-    assert heads[0].startswith("A. Job objectives") and "G. Manager assessment" in heads[-1] and len(doc.tables[1].rows) > 2
+    main = next(t for t in doc.tables if [c.text for c in t.rows[0].cells] == list("ABCDEFG"))  # the paper form's lettered columns
+    heads = [c.text for c in main.rows[1].cells]
+    assert heads[0].startswith("Job Objectives") and "Manager Assessment" in heads[-1] and len(main.rows) > 3
     assert client.get(f"{BASE}/roles/missing/appraisal-template.docx", headers=world.h["hr1"]).status_code == 404
 
 
