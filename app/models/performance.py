@@ -826,3 +826,19 @@ class PerformancePlan(Base):
     close_reason: Mapped[str | None] = mapped_column(String(12), nullable=True)  # manual | superseded
     close_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # how it stood on the day it was closed
+
+
+class PerformancePermissionGrant(Base):
+    """
+    One CHANGE to who may do what in the Staff Performance module, made from the dashboard (Roles & Permissions).
+    Only differences from the built-in defaults are stored: no row means "the default applies", so deleting a row resets that cell.
+    The "admin" role is never stored here: it always has every permission.
+    """
+
+    __tablename__ = "performance_permission_grants"
+
+    role: Mapped[str] = mapped_column(String(40), primary_key=True)
+    capability: Mapped[str] = mapped_column(String(60), primary_key=True)
+    allowed: Mapped[bool] = mapped_column(Boolean)
+    updated_by: Mapped[str] = mapped_column(String(100))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

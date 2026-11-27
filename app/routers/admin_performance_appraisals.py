@@ -38,6 +38,7 @@ from app.services.performance_config import effective_config, log_audit
 from app.services.performance_periods import parse_period
 from app.services.performance_roles import kpis_for, latest_version
 from app.services.performance_scope import PerformanceScope, get_performance_scope
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance", tags=["admin-performance-appraisals"])
 
@@ -228,7 +229,7 @@ def acknowledge(appraisal_id: str, db: Session = Depends(get_db), current_admin:
     return _respond(db, ap, profile, scope, "Thank you - acknowledged.")
 
 
-@router.post("/appraisals/{appraisal_id}/reopen", response_model=AppraisalWriteResponse, dependencies=[admin_or_hr])
+@router.post("/appraisals/{appraisal_id}/reopen", response_model=AppraisalWriteResponse, dependencies=[needs("appraisals.reopen")])
 def reopen(appraisal_id: str, payload: AppraisalReopen, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     scope = get_performance_scope(current_admin, db)
     ap, profile, resolver = _load(db, scope, appraisal_id)

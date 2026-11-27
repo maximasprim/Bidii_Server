@@ -35,6 +35,7 @@ from app.services.auth import get_current_admin
 from app.services.performance_config import log_audit
 from app.services.performance_import_parse import MAX_XLSX_BYTES, WorkbookError
 from app.services.performance_ratelimit import rate_limited
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance/import", tags=["admin-performance-import"])
 upload_rate_limit = Depends(rate_limited("import", limit=10, window_seconds=3600))
@@ -53,7 +54,7 @@ def _is_hr(admin: AdminUser) -> bool:
     return admin.role in ("hr", "admin")
 
 
-@router.post("/preview", dependencies=[admin_or_hr, upload_rate_limit])
+@router.post("/preview", dependencies=[needs("imports.manage"), upload_rate_limit])
 async def preview(request: Request, filename: str = "workbook.xlsx", year: int | None = Query(default=None, ge=2000, le=2100), db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)) -> dict[str, Any]:
     if not filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Please upload an .xlsx workbook (in Excel: Save As > Excel Workbook).")
@@ -66,7 +67,7 @@ async def preview(request: Request, filename: str = "workbook.xlsx", year: int |
     return imp_svc.preview_payload(db, imp, _is_hr(current_admin))
 
 
-@router.get("/template", dependencies=[admin_or_hr])
+@router.get("/template", dependencies=[needs("imports.manage")])
 def template(db: Session = Depends(get_db)) -> StreamingResponse:
     units = db.query(PerformanceUnit).filter(PerformanceUnit.is_active.is_(True), PerformanceUnit.kind != "head_office").order_by(PerformanceUnit.name.asc()).all()
     data = imp_svc.build_template([u.name for u in units])
@@ -76,7 +77,7 @@ def template(db: Session = Depends(get_db)) -> StreamingResponse:
     )
 
 
-@router.get("", dependencies=[admin_or_hr])
+@router.get("", dependencies=[needs("imports.manage")])
 def list_imports(db: Session = Depends(get_db)) -> dict[str, Any]:
     rows = db.query(PerformanceImport).filter(PerformanceImport.status != "discarded").order_by(PerformanceImport.created_at.desc()).limit(50).all()
     return {
@@ -88,7 +89,7 @@ def list_imports(db: Session = Depends(get_db)) -> dict[str, Any]:
     }
 
 
-@router.get("/{import_id}", dependencies=[admin_or_hr])
+@router.get("/{import_id}", dependencies=[needs("imports.manage")])
 def get_import(import_id: str, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)) -> dict[str, Any]:
     imp = _load(db, import_id)
     if not imp.parsed:
@@ -96,7 +97,7 @@ def get_import(import_id: str, db: Session = Depends(get_db), current_admin: Adm
     return imp_svc.preview_payload(db, imp, _is_hr(current_admin))
 
 
-@router.put("/{import_id}/decisions", dependencies=[admin_or_hr])
+@router.put("/{import_id}/decisions", dependencies=[needs("imports.manage")])
 def save_decisions(import_id: str, payload: DecisionsUpdate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)) -> dict[str, Any]:
     imp = _load(db, import_id)
     if imp.status != "previewed":
@@ -124,7 +125,7 @@ def _run(fn, imp: PerformanceImport, db: Session, admin: AdminUser) -> dict[str,
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/{import_id}/dry-run", dependencies=[admin_or_hr])
+@router.post("/{import_id}/dry-run", dependencies=[needs("imports.manage")])
 def dry_run(import_id: str, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)) -> dict[str, Any]:
     imp = _load(db, import_id)
     if imp.status != "previewed":
@@ -132,13 +133,13 @@ def dry_run(import_id: str, db: Session = Depends(get_db), current_admin: AdminU
     return _run(imp_svc.dry_run, imp, db, current_admin)
 
 
-@router.post("/{import_id}/commit", dependencies=[admin_or_hr])
+@router.post("/{import_id}/commit", dependencies=[needs("imports.manage")])
 def commit_import(import_id: str, payload: CommitRequest, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)) -> dict[str, Any]:
     imp = _load(db, import_id)
     return _run(imp_svc.commit, imp, db, current_admin)
 
 
-@router.post("/{import_id}/undo", dependencies=[admin_or_hr])
+@router.post("/{import_id}/undo", dependencies=[needs("imports.manage")])
 def undo_import(import_id: str, payload: CommitRequest, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)) -> dict[str, Any]:
     imp = _load(db, import_id)
     try:
@@ -147,7 +148,7 @@ def undo_import(import_id: str, payload: CommitRequest, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.delete("/{import_id}", dependencies=[admin_or_hr])
+@router.delete("/{import_id}", dependencies=[needs("imports.manage")])
 def discard_import(import_id: str, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)) -> dict[str, str]:
     imp = _load(db, import_id)
     if imp.status != "previewed":

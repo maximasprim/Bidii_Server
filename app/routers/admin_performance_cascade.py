@@ -25,6 +25,7 @@ from app.services.auth import get_current_admin
 from app.services.performance_config import log_audit
 from app.services.performance_scope import get_performance_scope
 from app.services.performance_time import today_nairobi
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance/cascade", tags=["admin-performance-cascade"])
 
@@ -68,7 +69,7 @@ def get_tree(kpi: str = Query(max_length=60), month: date | None = None, admin: 
         raise _bad(exc) from exc
 
 
-@router.put("/targets", dependencies=[admin_or_hr])
+@router.put("/targets", dependencies=[needs("cascade.manage")])
 def set_target(body: SetBody, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     scope = get_performance_scope(admin, db)
     if scope.read_only:
@@ -82,7 +83,7 @@ def set_target(body: SetBody, admin: AdminUser = Depends(get_current_admin), db:
     return {"changed": row is not None}
 
 
-@router.get("/proposal", dependencies=[admin_or_hr])
+@router.get("/proposal", dependencies=[needs("cascade.manage")])
 def get_proposal(level: Literal["company", "region", "unit"], kpi: str = Query(max_length=60), month: date | None = None, entity_id: str = Query(default="company", max_length=36), db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
         return pc.proposal(db, level, entity_id, kpi, month or today_nairobi())
@@ -90,7 +91,7 @@ def get_proposal(level: Literal["company", "region", "unit"], kpi: str = Query(m
         raise _bad(exc) from exc
 
 
-@router.post("/apply", dependencies=[admin_or_hr])
+@router.post("/apply", dependencies=[needs("cascade.manage")])
 def apply(body: ApplyBody, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     scope = get_performance_scope(admin, db)
     if scope.read_only:

@@ -24,6 +24,7 @@ from app.services.internal_notifications import notify
 from app.services.performance_config import log_audit
 from app.services.performance_scope import get_performance_scope
 from app.services.performance_time import today_nairobi
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance/pack", tags=["performance-pack"])
 internal = APIRouter(prefix="/api/internal/performance", tags=["performance-internal"])
@@ -66,7 +67,7 @@ def list_packs(admin: AdminUser = Depends(get_current_admin), db: Session = Depe
     return [_row(r) for r in db.query(BoardPack).order_by(BoardPack.month.desc()).limit(36)]
 
 
-@router.post("/generate", dependencies=[admin_or_hr])
+@router.post("/generate", dependencies=[needs("packs.generate")])
 def generate(body: Generate, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     month = _month(body.month)
     if month > today_nairobi().replace(day=1):

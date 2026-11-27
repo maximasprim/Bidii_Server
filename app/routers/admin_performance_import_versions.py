@@ -16,6 +16,7 @@ from app.services import performance_import as imp_svc
 from app.services import performance_import_versions as ver
 from app.services.auth import get_current_admin
 from app.services.performance_scope import get_performance_scope
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance/import", tags=["admin-performance-import-versions"])
 
@@ -57,34 +58,34 @@ def _problem(fn):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.get("/versions", dependencies=[admin_or_hr])
+@router.get("/versions", dependencies=[needs("imports.history")])
 def versions(series: str | None = Query(default=None, max_length=20), db: Session = Depends(get_db)) -> dict[str, Any]:
     return ver.listing(db, series)
 
 
-@router.get("/versions/compare", dependencies=[admin_or_hr])
+@router.get("/versions/compare", dependencies=[needs("imports.history")])
 def compare(a: str = Query(max_length=36), b: str = Query(max_length=36), db: Session = Depends(get_db)) -> dict[str, Any]:
     return _problem(lambda: ver.compare(db, _load(db, a), _load(db, b)))
 
 
-@router.put("/{import_id}/label", dependencies=[admin_or_hr])
+@router.put("/{import_id}/label", dependencies=[needs("imports.history")])
 def label(import_id: str, body: Label, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)) -> dict[str, str]:
     _problem(lambda: ver.set_label(db, _load(db, import_id), body.label, admin.username))
     return {"message": "Saved."}
 
 
-@router.get("/{import_id}/restore-plan", dependencies=[admin_or_hr])
+@router.get("/{import_id}/restore-plan", dependencies=[needs("imports.history")])
 def restore_plan(import_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     return _problem(lambda: ver.restore_plan(db, _load(db, import_id)))
 
 
-@router.post("/{import_id}/unpost", dependencies=[admin_or_hr])
+@router.post("/{import_id}/unpost", dependencies=[needs("imports.history")])
 def unpost(import_id: str, body: Unpost, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)) -> dict[str, Any]:
     _need_confirm(body.confirm)
     return _problem(lambda: ver.unpost(db, _load(db, import_id), admin.username, body.reason, cascade=body.cascade))
 
 
-@router.post("/{import_id}/restore", dependencies=[admin_or_hr])
+@router.post("/{import_id}/restore", dependencies=[needs("imports.history")])
 def restore(import_id: str, body: Restore, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)) -> dict[str, Any]:
     _need_confirm(body.confirm)
     is_hr = get_performance_scope(admin, db).is_hr

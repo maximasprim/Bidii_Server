@@ -39,6 +39,7 @@ from app.services.performance_periods import PeriodError, months_in, parse_perio
 from app.services.performance_ratelimit import rate_limited
 from app.services.performance_scope import PerformanceScope, get_performance_scope
 from app.services.performance_time import today_nairobi
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance/reports", tags=["admin-performance-reports"])
 export_limit = Depends(rate_limited("report-export", limit=30, window_seconds=3600))
@@ -445,7 +446,7 @@ def snapshot_one(db: Session, ctx: pr.Ctx, person: dict[str, Any], period, usern
     db.add(row)
 
 
-@router.post("/snapshots/recompute", dependencies=[admin_or_hr, Depends(rate_limited("snapshots", limit=10, window_seconds=3600))])
+@router.post("/snapshots/recompute", dependencies=[needs("reports.recompute"), Depends(rate_limited("snapshots", limit=10, window_seconds=3600))])
 def recompute(body: RecomputeRequest, db: Session = Depends(get_db), admin: AdminUser = Depends(get_current_admin)) -> dict[str, Any]:
     period = _period(body.period, db)
     ids = _live_ids(db)

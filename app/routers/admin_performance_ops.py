@@ -35,6 +35,7 @@ from app.services.auth import get_current_admin
 from app.services.performance_config import log_audit
 from app.services.performance_scope import get_performance_scope
 from app.services.performance_time import today_nairobi
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance/ops", tags=["admin-performance-ops"])
 internal = APIRouter(prefix="/api/internal/performance", tags=["internal-performance"])
@@ -117,12 +118,12 @@ def update_action(action_id: str, body: ActionUpdate, admin: AdminUser = Depends
     return _action_json(a, p.full_name)
 
 
-@router.get("/anomalies", dependencies=[admin_or_hr])
+@router.get("/anomalies", dependencies=[needs("ops.data_quality")])
 def get_anomalies(admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     return {"items": ops.anomalies(db, _visible_live(db, _scope(admin, db)))}
 
 
-@router.get("/data-quality", dependencies=[admin_or_hr])
+@router.get("/data-quality", dependencies=[needs("ops.data_quality")])
 def get_data_quality(db: Session = Depends(get_db)) -> dict[str, Any]:
     return {"issues": ops.data_quality(db, today_nairobi())}
 

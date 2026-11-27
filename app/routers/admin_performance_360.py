@@ -27,6 +27,7 @@ from app.services.auth import get_current_admin
 from app.services.internal_notifications import notify
 from app.services.performance_config import log_audit
 from app.services.performance_scope import get_performance_scope
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance/feedback360", tags=["admin-performance-360"])
 _NOT_FOUND = HTTPException(status_code=404, detail="That wasn't found.")
@@ -78,7 +79,7 @@ def _bad(exc: Exception) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc))
 
 
-@router.post("/cycles", dependencies=[admin_or_hr], status_code=201)
+@router.post("/cycles", dependencies=[needs("threesixty.manage")], status_code=201)
 def create_cycle(body: CycleBody, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     c = Feedback360Cycle(name=body.name.strip(), min_group=body.min_group, closes_on=body.closes_on, created_by_username=admin.username)
     db.add(c)
@@ -87,18 +88,18 @@ def create_cycle(body: CycleBody, admin: AdminUser = Depends(get_current_admin),
     return _cycle_json(c)
 
 
-@router.get("/cycles", dependencies=[admin_or_hr])
+@router.get("/cycles", dependencies=[needs("threesixty.manage")])
 def list_cycles(db: Session = Depends(get_db)) -> dict[str, Any]:
     return {"items": [_cycle_json(c) for c in db.query(Feedback360Cycle).order_by(Feedback360Cycle.created_at.desc())]}
 
 
-@router.get("/cycles/{cycle_id}", dependencies=[admin_or_hr])
+@router.get("/cycles/{cycle_id}", dependencies=[needs("threesixty.manage")])
 def get_cycle(cycle_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     c = _cycle(db, cycle_id)
     return {**_cycle_json(c), "progress": f.progress(db, c)}
 
 
-@router.get("/suggest/{profile_id}", dependencies=[admin_or_hr])
+@router.get("/suggest/{profile_id}", dependencies=[needs("threesixty.manage")])
 def suggest(profile_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     p = db.get(StaffProfile, profile_id)
     if p is None:
@@ -107,7 +108,7 @@ def suggest(profile_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     return {"raters": [{"profile_id": i, "name": names.get(i), "relationship": rel} for i, rel in f.suggest_raters(db, p)]}
 
 
-@router.post("/cycles/{cycle_id}/subjects", dependencies=[admin_or_hr], status_code=201)
+@router.post("/cycles/{cycle_id}/subjects", dependencies=[needs("threesixty.manage")], status_code=201)
 def add_subject(cycle_id: str, body: SubjectBody, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     c = _cycle(db, cycle_id)
     p = db.get(StaffProfile, body.profile_id)
@@ -121,7 +122,7 @@ def add_subject(cycle_id: str, body: SubjectBody, admin: AdminUser = Depends(get
     return {"subject_id": s.id}
 
 
-@router.delete("/cycles/{cycle_id}/subjects/{subject_id}", dependencies=[admin_or_hr])
+@router.delete("/cycles/{cycle_id}/subjects/{subject_id}", dependencies=[needs("threesixty.manage")])
 def remove_subject(cycle_id: str, subject_id: str, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     c = _cycle(db, cycle_id)
     s = db.get(Feedback360Subject, subject_id)
@@ -136,7 +137,7 @@ def remove_subject(cycle_id: str, subject_id: str, admin: AdminUser = Depends(ge
     return {"removed": True}
 
 
-@router.post("/cycles/{cycle_id}/status", dependencies=[admin_or_hr])
+@router.post("/cycles/{cycle_id}/status", dependencies=[needs("threesixty.manage")])
 def set_status(cycle_id: str, body: StatusBody, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     c = _cycle(db, cycle_id)
     try:

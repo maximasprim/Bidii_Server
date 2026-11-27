@@ -29,6 +29,7 @@ from app.services.auth import get_current_admin
 from app.services.performance_config import log_audit
 from app.services.performance_scope import get_performance_scope
 from app.services.performance_time import today_nairobi
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance/governance", tags=["admin-performance-governance"])
 
@@ -63,17 +64,17 @@ def acknowledge(admin: AdminUser = Depends(get_current_admin), db: Session = Dep
     return gov.notice_state(db, admin.id)
 
 
-@router.get("/notice/outstanding", dependencies=[admin_or_hr])
+@router.get("/notice/outstanding", dependencies=[needs("governance.notice")])
 def outstanding(db: Session = Depends(get_db)) -> dict[str, Any]:
     return {"version": gov.NOTICE_VERSION, "items": gov.notice_outstanding(db)}
 
 
-@router.get("/locks", dependencies=[admin_or_hr])
+@router.get("/locks", dependencies=[needs("locks.manage")])
 def locks(db: Session = Depends(get_db)) -> dict[str, Any]:
     return {"items": gov.lock_list(db)}
 
 
-@router.post("/locks", dependencies=[admin_or_hr])
+@router.post("/locks", dependencies=[needs("locks.manage")])
 def lock(body: PeriodBody, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
         done = gov.lock(db, body.period, admin.username, today_nairobi())
@@ -83,7 +84,7 @@ def lock(body: PeriodBody, admin: AdminUser = Depends(get_current_admin), db: Se
     return {"locked": done}
 
 
-@router.post("/locks/reopen", dependencies=[admin_or_hr])
+@router.post("/locks/reopen", dependencies=[needs("locks.manage")])
 def reopen(body: ReopenBody, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     try:
         done = gov.reopen(db, body.period, admin.username, body.reason, today_nairobi())
@@ -93,12 +94,12 @@ def reopen(body: ReopenBody, admin: AdminUser = Depends(get_current_admin), db: 
     return {"reopened": done}
 
 
-@router.get("/retention/candidates", dependencies=[admin_or_hr])
+@router.get("/retention/candidates", dependencies=[needs("retention.view")])
 def candidates(db: Session = Depends(get_db)) -> dict[str, Any]:
     return gov.retention_candidates(db, today_nairobi())
 
 
-@router.post("/retention/{profile_id}/anonymise", dependencies=[admin_only])
+@router.post("/retention/{profile_id}/anonymise", dependencies=[needs("retention.anonymise")])
 def anonymise(profile_id: str, body: AnonymiseBody, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
     profile = db.get(StaffProfile, profile_id)
     if profile is None:

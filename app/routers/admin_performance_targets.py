@@ -54,6 +54,7 @@ from app.services.performance_levels import LevelError, make_key, validate_defau
 from app.services.performance_roles import targetable_kpis
 from app.services.performance_scope import PerformanceScope, get_performance_scope
 from app.services.performance_time import today_nairobi
+from app.services.performance_permissions import is_limited, needs
 
 router = APIRouter(prefix="/api/admin/performance", tags=["admin-performance-targets"])
 
@@ -81,7 +82,7 @@ def list_levels(role_id: str | None = None, include_inactive: bool = False, db: 
     return LevelListResponse(items=[_level_read(db, l) for l in q.order_by(PerformanceLevel.role_id, PerformanceLevel.rank).all()])
 
 
-@router.post("/levels", response_model=LevelWriteResponse, status_code=201, dependencies=[admin_or_hr])
+@router.post("/levels", response_model=LevelWriteResponse, status_code=201, dependencies=[needs("levels.edit")])
 def create_level(payload: LevelCreate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     if db.get(PerformanceRole, payload.role_id) is None:
         raise HTTPException(status_code=400, detail="That job role doesn't exist.")
@@ -100,7 +101,7 @@ def create_level(payload: LevelCreate, db: Session = Depends(get_db), current_ad
     return LevelWriteResponse(message="Level created.", data=_level_read(db, level))
 
 
-@router.patch("/levels/{level_id}", response_model=LevelWriteResponse, dependencies=[admin_or_hr])
+@router.patch("/levels/{level_id}", response_model=LevelWriteResponse, dependencies=[needs("levels.edit")])
 def update_level(level_id: str, payload: LevelUpdate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     level = db.get(PerformanceLevel, level_id)
     if level is None:
@@ -146,10 +147,12 @@ def staff_targets(profile_id: str, month: date | None = None, db: Session = Depe
     return _staff_targets(db, profile, tg.first_of_month(month or today_nairobi()))
 
 
-@router.put("/staff/{profile_id}/targets", response_model=TargetSetResponse, dependencies=[admin_or_hr])
+@router.put("/staff/{profile_id}/targets", response_model=TargetSetResponse, dependencies=[needs("targets.set")])
 def set_staff_target(profile_id: str, payload: TargetSet, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     scope = get_performance_scope(current_admin, db)
     profile = _profile_in_scope(db, scope, profile_id)
+    if is_limited(db, current_admin, "targets.set") and profile.id == scope.own_profile_id:  # a line manager: their team only, never themselves
+        raise HTTPException(status_code=403, detail="You can't set your own targets.")
     try:
         row = tg.set_target(db, profile, payload.kpi_key, payload.effective_from, payload.value, payload.reason, current_admin.username)
     except tg.TargetError as exc:
@@ -200,7 +203,7 @@ def targets_grid(
 # ---- bulk -----------------------------------------------------------------------------------------------------------
 
 
-@router.post("/targets/bulk", response_model=BulkTargetResponse, dependencies=[admin_or_hr])
+@router.post("/targets/bulk", response_model=BulkTargetResponse, dependencies=[needs("targets.set")])
 def bulk_targets(payload: BulkTargetRequest, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     """
     Set a value, apply level defaults, or copy forward (with an optional % uplift) for many people. With
@@ -209,6 +212,9 @@ def bulk_targets(payload: BulkTargetRequest, db: Session = Depends(get_db), curr
     try:
         profiles = tg.select_profiles(db, role_id=payload.role_id, unit_id=payload.unit_id, region_id=payload.region_id,
                                       level_id=payload.level_id, profile_ids=payload.profile_ids)
+        if is_limited(db, current_admin, "targets.set"):  # a line manager: only the people in their own team, never themselves
+            scope = get_performance_scope(current_admin, db)
+            profiles = [p for p in profiles if scope.can_see(p.id) and p.id != scope.own_profile_id]
         if payload.mode == "set_value":
             if not payload.kpi_key or payload.value is None:
                 raise tg.TargetError("Choose a KPI and a value.")
@@ -300,7 +306,7 @@ def _request_in_scope(db: Session, scope: PerformanceScope, request_id: str, use
     return req
 
 
-@router.post("/target-requests/{request_id}/decision", response_model=TargetRequestWriteResponse, dependencies=[admin_or_hr])
+@router.post("/target-requests/{request_id}/decision", response_model=TargetRequestWriteResponse, dependencies=[needs("targets.decide")])
 def decide_target_request(request_id: str, payload: TargetRequestDecision, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     scope = get_performance_scope(current_admin, db)
     req = _request_in_scope(db, scope, request_id, current_admin.username)

@@ -37,6 +37,7 @@ from app.services.performance_config import effective_config, log_audit
 from app.services.performance_scope import PerformanceScope, get_performance_scope
 from app.services.performance_targets import first_of_month, in_force_map
 from app.services.performance_time import today_nairobi
+from app.services.performance_permissions import is_limited, needs
 
 router = APIRouter(prefix="/api/admin/performance", tags=["admin-performance-entries"])
 
@@ -161,12 +162,14 @@ def decide_entries(payload: EntryDecision, db: Session = Depends(get_db), curren
     return EntryDecisionResponse(updated=updated, failed=failed)
 
 
-@router.post("/entries/{entry_id}/reopen", response_model=EntryWriteResponse, dependencies=[admin_or_hr])
+@router.post("/entries/{entry_id}/reopen", response_model=EntryWriteResponse, dependencies=[needs("entries.reopen")])
 def reopen_entry(entry_id: str, payload: EntryReopen, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     scope = get_performance_scope(current_admin, db)
     entry = db.get(KpiEntry, entry_id)
     if entry is None or not scope.can_see(entry.profile_id):
         raise HTTPException(status_code=404, detail="Entry not found.")
+    if is_limited(db, current_admin, "entries.reopen") and entry.profile_id == scope.own_profile_id:  # a line manager: their team only
+        raise HTTPException(status_code=403, detail="You can't reopen your own figures.")
     profile = db.get(StaffProfile, entry.profile_id)
     try:
         pe.reopen(db, entry, payload.reason, current_admin.username)

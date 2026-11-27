@@ -399,3 +399,33 @@ Branch, region, organisation and team totals (the KES actual and target, and the
 * **Organisation report:** it no longer builds a second data set just to read the rating scale, and each branch's leavers are scored only against the branches they worked in.
 * **Staff page:** the search waits 300 ms after you stop typing, and the role and manager lists are fetched on first load and after a save, not on every keystroke.
 * **Report pages** show the last copy of a report you opened (same signed-in person, same period and choices, under 5 minutes old) while the fresh one loads, then replace it. Kept in memory only.
+
+## Permissions you can change from the dashboard
+
+Every action that used to be hard-coded as "administrators only" or "administrators and HR" (75 routes) is now one of 27 named permissions, set per role on **Roles & Permissions** (a matrix under the menus table).
+
+* **Defaults are exactly the old rules.** Nothing changes until an administrator ticks or unticks a box. Only differences from the defaults are stored (`performance_permission_grants`); a role's "reset" arrow, or ticking back to the default, removes them.
+* **Enforced on the server, on every request** (`needs("levels.edit")` on each route), so a change applies on the person's next action and a hidden button is only a courtesy. The pages ask `GET /api/admin/performance/permissions/me` to decide what to show.
+* **Administrators can never be restricted**, and the matrix itself (`GET/PUT /permissions`, `POST /permissions/reset`) stays administrators-only whatever is configured.
+* **Sensitive permissions** (anonymise, audit log, set-up tools, restore imports, lock/reopen months) need a confirmation to grant to another role. Every change is written to the audit log (`permissions.change`, `permissions.reset`).
+* **A tick applies across the whole organisation** for everyone with that role. What a person can *see* (their team, their branch) is still decided by the reporting structure. A role also needs the menu to open the page; the matrix flags a missing one.
+* If the changes cannot be read, the defaults apply (never "allow everything").
+* Tests: `performance_tests/test_permissions.py` (the defaults equal the old rules, every permission is enforced by a route, grant / deny / reset, sensitive confirmation, admin immunity, fail-safe).
+
+### Line managers: permissions for their own team only
+
+The matrix has a **Line managers** column. A line manager is anyone who manages people or a branch in the performance structure, whatever their dashboard role. A tick there lets them do an action for **their own team only** (the people and units inside their scope), never anyone else and never themselves. Nothing is on by default.
+
+Only five actions can be limited to a team (`manager_scope`); the rest are organisation-wide and are locked in that column.
+
+| Permission | What a line manager may do | The limits (enforced by the server) |
+|---|---|---|
+| `targets.set` | Set a team member's targets, or bulk-set targets | Only people they can see; never their own; bulk only reaches their team |
+| `targets.decide` | Approve or decline a target change request | Only their team's requests; nobody decides their own request or their own target |
+| `entries.reopen` | Reopen a verified monthly figure | Only their team's figures; never their own |
+| `org.coverage` | See and change who covers for a team member | Only their team; only units they manage; coverage someone else set for other units is left untouched |
+| `staff.manage` | Add a person, or edit name / number / level / dates / unit / manager | Only into a unit they manage or under someone in their team; cannot link or create a login, change role, status, active flag or executive view; cannot edit themselves; the list of unlinked logins stays organisation-wide |
+
+Left out on purpose: **reopening an appraisal** (the appraisal service itself allows only HR or an administrator) and **360 cycles** (they are not tied to one person's team).
+
+A tick on a role (organisation-wide) always wins over a line-manager tick. Administrators and HR are not "line managers": if an administrator turns an action off for HR, HR cannot get it back through this column. `GET /permissions/me` returns `team_only`, the permissions someone holds only as a line manager. Tests: `performance_tests/test_line_managers.py`.

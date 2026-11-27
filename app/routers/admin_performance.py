@@ -22,14 +22,17 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.admin_user import AdminUser
+from app.models.performance import PerformancePermissionGrant
 from app.models.branch import Branch
 from app.models.performance import (
     PerformanceAction,
@@ -100,7 +103,9 @@ from app.services.performance_config import (
 from app.services.performance_roles import is_configured
 from app.services.performance_scope import PerformanceScope, get_performance_scope
 from app.services.performance_time import today_nairobi
-from app.services.role_permissions import require_menu_access
+from app.services import performance_permissions as perm
+from app.services.performance_permissions import needs
+from app.services.role_permissions import CONFIGURABLE_ROLES, get_all_effective_permissions, get_effective_menus_for_role, require_menu_access
 
 logger = logging.getLogger("bidii.performance")
 
@@ -388,7 +393,7 @@ def read_config(db: Session = Depends(get_db)):
     return ConfigRead(config=cfg, version=version)
 
 
-@router.put("/config", response_model=ConfigUpdateResponse, dependencies=[admin_or_hr])
+@router.put("/config", response_model=ConfigUpdateResponse, dependencies=[needs("settings.edit")])
 def update_config(payload: ConfigUpdate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     try:
         cfg, version = save_org_config(db, payload.config, current_admin.username)
@@ -409,7 +414,7 @@ def list_scales(db: Session = Depends(get_db)):
     return ScaleListResponse(items=items)
 
 
-@router.post("/scales", response_model=ScaleWriteResponse, status_code=201, dependencies=[admin_or_hr])
+@router.post("/scales", response_model=ScaleWriteResponse, status_code=201, dependencies=[needs("settings.edit")])
 def create_scale(payload: ScaleCreate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     """Adds a NEW effective-dated scale. Past scales are never edited, so closed periods never change."""
     try:
@@ -430,7 +435,7 @@ def create_scale(payload: ScaleCreate, db: Session = Depends(get_db), current_ad
     return ScaleWriteResponse(message="Rating scale saved.", data=data)
 
 
-@router.post("/scales/preview", response_model=ScalePreviewResponse, dependencies=[admin_or_hr])
+@router.post("/scales/preview", response_model=ScalePreviewResponse, dependencies=[needs("settings.edit")])
 def preview_scale(payload: ScalePreviewRequest, db: Session = Depends(get_db)):
     """What would these thresholds do to the supplied scores, compared with today's? Writes nothing."""
     current = performance_scales.scale_as_of(db)
@@ -463,7 +468,7 @@ def _check_overrides(overrides: dict | None) -> None:
             raise HTTPException(status_code=400, detail=f"Invalid role override: {exc}") from exc
 
 
-@router.post("/roles", response_model=PerformanceRoleWriteResponse, status_code=201, dependencies=[admin_or_hr])
+@router.post("/roles", response_model=PerformanceRoleWriteResponse, status_code=201, dependencies=[needs("roles.edit")])
 def create_role(payload: PerformanceRoleCreate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     ensure_defaults(db)
     key = _slug(payload.key or payload.name)
@@ -483,7 +488,7 @@ def create_role(payload: PerformanceRoleCreate, db: Session = Depends(get_db), c
     return PerformanceRoleWriteResponse(message="Performance role created.", data=_role_read(db, role))
 
 
-@router.patch("/roles/{role_id}", response_model=PerformanceRoleWriteResponse, dependencies=[admin_or_hr])
+@router.patch("/roles/{role_id}", response_model=PerformanceRoleWriteResponse, dependencies=[needs("roles.edit")])
 def update_role(role_id: str, payload: PerformanceRoleUpdate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     role = db.get(PerformanceRole, role_id)
     if role is None:
@@ -502,7 +507,7 @@ def update_role(role_id: str, payload: PerformanceRoleUpdate, db: Session = Depe
     return PerformanceRoleWriteResponse(message="Performance role updated.", data=_role_read(db, role))
 
 
-@router.delete("/roles/{role_id}", response_model=PerformanceRoleWriteResponse, dependencies=[admin_or_hr])
+@router.delete("/roles/{role_id}", response_model=PerformanceRoleWriteResponse, dependencies=[needs("roles.edit")])
 def delete_role(role_id: str, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     role = db.get(PerformanceRole, role_id)
     if role is None:
@@ -539,7 +544,7 @@ def _check_unit_links(db: Session, branch_id: str | None, manager_profile_id: st
     _require_profile_exists(db, manager_profile_id, "manager")
 
 
-@router.post("/units", response_model=UnitWriteResponse, status_code=201, dependencies=[admin_only])
+@router.post("/units", response_model=UnitWriteResponse, status_code=201, dependencies=[needs("structure.edit")])
 def create_unit(payload: UnitCreate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     if db.query(PerformanceUnit).filter(PerformanceUnit.name == payload.name.strip()).first() is not None:
         raise HTTPException(status_code=409, detail="A unit with that name already exists.")
@@ -565,7 +570,7 @@ def create_unit(payload: UnitCreate, db: Session = Depends(get_db), current_admi
     return UnitWriteResponse(message="Unit created.", data=_unit_read(unit, None, {}))
 
 
-@router.patch("/units/{unit_id}", response_model=UnitWriteResponse, dependencies=[admin_only])
+@router.patch("/units/{unit_id}", response_model=UnitWriteResponse, dependencies=[needs("structure.edit")])
 def update_unit(unit_id: str, payload: UnitUpdate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     unit = db.get(PerformanceUnit, unit_id)
     if unit is None:
@@ -590,7 +595,7 @@ def update_unit(unit_id: str, payload: UnitUpdate, db: Session = Depends(get_db)
     return UnitWriteResponse(message="Unit updated.", data=_unit_read(unit, link, _region_map(db)))
 
 
-@router.put("/units/{unit_id}/region", response_model=UnitWriteResponse, dependencies=[admin_only])
+@router.put("/units/{unit_id}/region", response_model=UnitWriteResponse, dependencies=[needs("structure.edit")])
 def assign_unit_region(unit_id: str, payload: UnitRegionAssign, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     """Moves a unit to a region (or out of every region) from a date; earlier history is kept."""
     unit = db.get(PerformanceUnit, unit_id)
@@ -623,7 +628,7 @@ def list_regions(include_inactive: bool = False, db: Session = Depends(get_db)):
     return RegionListResponse(items=[_region_read(db, r) for r in query.order_by(Region.name.asc()).all()])
 
 
-@router.post("/regions", response_model=RegionWriteResponse, status_code=201, dependencies=[admin_only])
+@router.post("/regions", response_model=RegionWriteResponse, status_code=201, dependencies=[needs("structure.edit")])
 def create_region(payload: RegionCreate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     if db.query(Region).filter(Region.name == payload.name.strip()).first() is not None:
         raise HTTPException(status_code=409, detail="A region with that name already exists.")
@@ -636,7 +641,7 @@ def create_region(payload: RegionCreate, db: Session = Depends(get_db), current_
     return RegionWriteResponse(message="Region created.", data=_region_read(db, region))
 
 
-@router.patch("/regions/{region_id}", response_model=RegionWriteResponse, dependencies=[admin_only])
+@router.patch("/regions/{region_id}", response_model=RegionWriteResponse, dependencies=[needs("structure.edit")])
 def update_region(region_id: str, payload: RegionUpdate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     region = db.get(Region, region_id)
     if region is None:
@@ -707,7 +712,7 @@ def list_staff(
     return StaffProfileListResponse(items=_profiles_read(db, scope, rows), total=total)
 
 
-@router.get("/staff/linkable-users", response_model=LinkableUsersResponse, dependencies=[admin_or_hr])
+@router.get("/staff/linkable-users", response_model=LinkableUsersResponse, dependencies=[needs("staff.manage", org_wide=True)])
 def linkable_users(db: Session = Depends(get_db)):
     """Active dashboard accounts not yet linked to a staff profile (admin/hr only)."""
     linked = {uid for (uid,) in db.query(StaffProfile.admin_user_id).filter(StaffProfile.admin_user_id.is_not(None)).all()}
@@ -723,13 +728,51 @@ def get_staff(profile_id: str, db: Session = Depends(get_db), current_admin: Adm
     return _profiles_read(db, scope, [_profile_in_scope(db, scope, profile_id)])[0]
 
 
-@router.post("/staff", response_model=StaffProfileWriteResponse, status_code=201, dependencies=[admin_or_hr])
+# What a line manager (staff.manage switched on for them, but not for their role) may and may not do. Everything else follows the normal rules.
+_LIMITED_EDIT_BLOCKED = ("admin_user_id", "performance_role_id", "status", "is_active", "is_executive")
+
+
+def _team_ids(scope: PerformanceScope) -> set[str]:
+    return set(scope.visible_ids or ()) | ({scope.own_profile_id} if scope.own_profile_id else set())
+
+
+def _limited_create(scope: PerformanceScope, payload: StaffProfileCreate) -> None:
+    if payload.admin_user_id or payload.login is not None:
+        raise HTTPException(status_code=403, detail="Linking or creating a login needs HR or an administrator.")
+    if payload.status not in ("active", "probation"):
+        raise HTTPException(status_code=403, detail="You can only add someone as active or on probation.")
+    in_unit = payload.unit_id is not None and payload.unit_id in scope.managed_unit_ids
+    under_me = payload.manager_id is not None and payload.manager_id in _team_ids(scope)
+    if payload.unit_id is not None and not in_unit:
+        raise HTTPException(status_code=403, detail="You can only add people to a unit you manage.")
+    if payload.manager_id is not None and not under_me:
+        raise HTTPException(status_code=403, detail="The manager must be you or someone in your team.")
+    if not (in_unit or under_me):
+        raise HTTPException(status_code=403, detail="Choose a unit you manage or a manager in your team.")
+
+
+def _limited_update(scope: PerformanceScope, profile: StaffProfile, changes: dict[str, Any]) -> None:
+    if profile.id == scope.own_profile_id:
+        raise HTTPException(status_code=403, detail="You can't edit your own profile.")
+    # the edit form re-sends every field, so only a field that actually CHANGES counts
+    blocked = sorted(k for k in _LIMITED_EDIT_BLOCKED if k in changes and changes[k] != getattr(profile, k))
+    if blocked:
+        raise HTTPException(status_code=403, detail=f"Changing {', '.join(blocked)} needs HR or an administrator.")
+    if "unit_id" in changes and changes["unit_id"] != profile.unit_id and changes["unit_id"] not in scope.managed_unit_ids:
+        raise HTTPException(status_code=403, detail="You can only move someone to a unit you manage.")
+    if "manager_id" in changes and changes["manager_id"] != profile.manager_id and changes["manager_id"] not in _team_ids(scope):
+        raise HTTPException(status_code=403, detail="The manager must be you or someone in your team.")
+
+
+@router.post("/staff", response_model=StaffProfileWriteResponse, status_code=201, dependencies=[needs("staff.manage")])
 def create_staff(payload: StaffProfileCreate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     scope = get_performance_scope(current_admin, db)
     if payload.is_executive and not scope.is_admin:
         raise HTTPException(status_code=403, detail="Only an administrator can grant the executive view.")
     if payload.status == "pip" and not scope.is_hr:
         raise HTTPException(status_code=403, detail="Only HR can place someone on a PIP.")
+    if perm.is_limited(db, current_admin, "staff.manage"):
+        _limited_create(scope, payload)
     _validate_links(db, role_id=payload.performance_role_id, unit_id=payload.unit_id, manager_id=payload.manager_id, admin_user_id=payload.admin_user_id)
     _validate_level(db, payload.level_id, payload.performance_role_id)
     data = payload.model_dump(exclude={"login"})
@@ -766,12 +809,14 @@ def create_staff(payload: StaffProfileCreate, db: Session = Depends(get_db), cur
     return StaffProfileWriteResponse(message="Staff profile created.", data=_profiles_read(db, scope, [profile])[0])
 
 
-@router.patch("/staff/{profile_id}", response_model=StaffProfileWriteResponse, dependencies=[admin_or_hr])
+@router.patch("/staff/{profile_id}", response_model=StaffProfileWriteResponse, dependencies=[needs("staff.manage")])
 def update_staff(profile_id: str, payload: StaffProfileUpdate, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     scope = get_performance_scope(current_admin, db)
     profile = _profile_in_scope(db, scope, profile_id)
     changes = payload.model_dump(exclude_unset=True)
     reason = changes.pop("change_reason", None)
+    if perm.is_limited(db, current_admin, "staff.manage"):
+        _limited_update(scope, profile, changes)
     for required in ("performance_role_id", "full_name", "status", "is_executive", "is_active"):
         if changes.get(required, "") is None:
             changes.pop(required)  # these can't be cleared
@@ -875,7 +920,121 @@ def create_action(profile_id: str, payload: ActionCreate, db: Session = Depends(
 # --------------------------------------------------------------------------
 
 
-@router.get("/audit", response_model=AuditListResponse, dependencies=[admin_only])
+@router.get("/audit", response_model=AuditListResponse, dependencies=[needs("audit.view")])
 def list_audit(limit: int = Query(default=100, ge=1, le=500), db: Session = Depends(get_db)):
     rows = db.query(PerformanceAuditLog).order_by(PerformanceAuditLog.created_at.desc()).limit(limit).all()
     return AuditListResponse(items=[AuditEntry.model_validate(r) for r in rows])
+
+
+# --------------------------------------------------------------------------
+# Who may do what - the Roles & Permissions screen
+#
+# Every action that used to be "administrators only" or "administrators and HR" is a named permission (performance_permissions.py).
+# Administrators set, per role, which permissions are on. Only changes from the built-in defaults are stored, and "admin" can never be
+# restricted. These routes themselves stay administrators-only, whatever is configured.
+# --------------------------------------------------------------------------
+
+
+class PermissionSet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: str = Field(min_length=1, max_length=40)
+    capability: str = Field(min_length=1, max_length=60)
+    allowed: bool
+    confirm_sensitive: bool = False
+
+
+class PermissionReset(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: str | None = Field(default=None, max_length=40)
+
+
+def _permission_cell(role: str, cap: perm.Capability, over: dict[str, bool], menus: set[str]) -> dict[str, Any]:
+    if role == perm.LINE_MANAGER:
+        if not cap.manager_scope:  # an organisation-wide action: it can't be limited to a team, so it can't be given to line managers
+            return {"allowed": False, "default": False, "overridden": False, "menu_missing": False, "locked": True}
+        return {"allowed": over.get(cap.key, False), "default": False, "overridden": cap.key in over, "menu_missing": False, "locked": False}
+    default = perm.default_allowed(role, cap.key)
+    allowed = over.get(cap.key, default)
+    # menu_missing: allowed, but the role cannot open the page this belongs to (it also needs that menu on the same screen)
+    return {"allowed": allowed, "default": default, "overridden": cap.key in over, "menu_missing": bool(allowed and cap.menu not in menus), "locked": False}
+
+
+@router.get("/permissions/me")
+def my_performance_permissions(admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """
+    The permissions the signed-in person has right now. The pages use it to show or hide buttons; the server still checks every request.
+    `team_only` lists the ones they hold as a line manager, which work for their own team only.
+    """
+    caps = perm.effective_for_role(db, admin.role)
+    team_only: set[str] = set()
+    if admin.role != perm.ADMIN and perm.is_line_manager(get_performance_scope(admin, db)):
+        team_only = perm.line_manager_keys(db) - caps
+    return {"role": admin.role, "capabilities": sorted(caps | team_only), "team_only": sorted(team_only)}
+
+
+@router.get("/permissions", dependencies=[admin_only])
+def permission_matrix(db: Session = Depends(get_db)) -> dict[str, Any]:
+    roles = [perm.LINE_MANAGER, *CONFIGURABLE_ROLES]  # "line managers" first: the team-only column
+    over: dict[str, dict[str, bool]] = {r: {} for r in roles}
+    for row in db.query(PerformancePermissionGrant):
+        if row.role in over:
+            over[row.role][row.capability] = bool(row.allowed)
+    # every role's menus in one query (it used to be one query per role); same answer as get_effective_menus_for_role for each
+    by_role = {p.role: set(p.allowed_menus) for p in get_all_effective_permissions(db)}
+    menus = {r: by_role.get(r, set()) for r in roles if r != perm.LINE_MANAGER}
+    menus[perm.LINE_MANAGER] = set()
+    return {
+        "roles": roles,
+        "groups": list(perm.GROUPS),
+        "capabilities": [
+            {
+                "key": c.key, "label": c.label, "description": c.description, "group": c.group, "sensitive": c.sensitive, "menu": c.menu,
+                "default_roles": list(c.default_roles),
+                "cells": {r: _permission_cell(r, c, over[r], menus[r]) for r in roles},
+            }
+            for c in perm.CAPABILITIES
+        ],
+    }
+
+
+@router.put("/permissions", dependencies=[admin_only])
+def set_permission(body: PermissionSet, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
+    if body.role == perm.ADMIN:
+        raise HTTPException(status_code=422, detail="Administrators always have every permission.")
+    if body.role not in CONFIGURABLE_ROLES and body.role != perm.LINE_MANAGER:
+        raise HTTPException(status_code=422, detail="Unknown role.")
+    cap = perm.BY_KEY.get(body.capability)
+    if cap is None:
+        raise HTTPException(status_code=422, detail="Unknown permission.")
+    if body.role == perm.LINE_MANAGER and not cap.manager_scope:
+        raise HTTPException(status_code=422, detail="This covers the whole organisation, so it can't be limited to a team.")
+    default = perm.default_allowed(body.role, cap.key)
+    if body.allowed and cap.sensitive and not default and not body.confirm_sensitive:
+        raise HTTPException(status_code=422, detail="This is a sensitive permission. Confirm to grant it.")
+    row = db.get(PerformancePermissionGrant, (body.role, cap.key))
+    if body.allowed == default:  # back to the default: keep nothing
+        if row is not None:
+            db.delete(row)
+    elif row is not None:
+        row.allowed, row.updated_by, row.updated_at = body.allowed, admin.username, datetime.now(timezone.utc)
+    else:
+        db.add(PerformancePermissionGrant(role=body.role, capability=cap.key, allowed=body.allowed, updated_by=admin.username))
+    db.commit()
+    log_audit(db, admin.username, "permissions.change", "permission", f"{body.role}:{cap.key}", {"allowed": body.allowed, "default": default})
+    menus = set() if body.role == perm.LINE_MANAGER else set(get_effective_menus_for_role(db, body.role))
+    cell = _permission_cell(body.role, cap, perm.overrides_for_role(db, body.role), menus)
+    return {"role": body.role, "capability": cap.key, "cell": cell}
+
+
+@router.post("/permissions/reset", dependencies=[admin_only])
+def reset_permissions(body: PermissionReset, admin: AdminUser = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Put one role (or every role) back to the built-in defaults."""
+    q = db.query(PerformancePermissionGrant)
+    if body.role is not None:
+        if body.role not in CONFIGURABLE_ROLES and body.role != perm.LINE_MANAGER:
+            raise HTTPException(status_code=422, detail="Unknown role.")
+        q = q.filter(PerformancePermissionGrant.role == body.role)
+    removed = q.delete(synchronize_session=False)
+    db.commit()
+    log_audit(db, admin.username, "permissions.reset", "permission", body.role or "all", {"removed": removed})
+    return {"removed": removed}

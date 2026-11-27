@@ -38,6 +38,7 @@ from app.services.auth import get_current_admin
 from app.services.performance_config import log_audit
 from app.services.performance_ratelimit import rate_limited
 from app.services.performance_role_templates import DEFAULT_COMPETENCIES
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance", tags=["admin-performance-roles"])
 ai_rate_limit = Depends(rate_limited("ai"))
@@ -111,7 +112,7 @@ def get_version(role_id: str, version: int, db: Session = Depends(get_db)):
     return _detail(db, role, found)
 
 
-@router.put("/roles/{role_id}/jd", response_model=RoleVersionRead, dependencies=[admin_or_hr])
+@router.put("/roles/{role_id}/jd", response_model=RoleVersionRead, dependencies=[needs("roles.jd")])
 def save_jd(role_id: str, payload: RoleVersionSave, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     """Saves the JD + KPIs + sign-off chain. Updates the current version while unused; creates the next once it is locked."""
     role = _role_or_404(db, role_id)
@@ -124,7 +125,7 @@ def save_jd(role_id: str, payload: RoleVersionSave, db: Session = Depends(get_db
     return _detail(db, role, version, created_new=created_new)
 
 
-@router.post("/ai/extract-jd", response_model=JDExtractResponse, dependencies=[admin_or_hr, ai_rate_limit])
+@router.post("/ai/extract-jd", response_model=JDExtractResponse, dependencies=[needs("roles.jd"), ai_rate_limit])
 async def extract_jd(
     request: Request,
     filename: str = Query(..., min_length=1, max_length=200, description="Original file name; used only to check the extension."),
@@ -159,7 +160,7 @@ async def extract_jd(
     return result
 
 
-@router.post("/ai/suggest-kpis", response_model=KpiSuggestResponse, dependencies=[admin_or_hr, ai_rate_limit])
+@router.post("/ai/suggest-kpis", response_model=KpiSuggestResponse, dependencies=[needs("roles.jd"), ai_rate_limit])
 def suggest_kpis(payload: KpiSuggestRequest, db: Session = Depends(get_db), current_admin: AdminUser = Depends(get_current_admin)):
     """Proposed KPI rows (a draft). Weights come from the responsibilities, never from the AI; a rules proposal is used if AI is unavailable."""
     errors: list[str] = []

@@ -25,6 +25,7 @@ from app.services.auth import get_current_admin
 from app.services.performance_config import log_audit
 from app.services.performance_ratelimit import rate_limited
 from app.services.performance_time import today_nairobi
+from app.services.performance_permissions import needs
 
 router = APIRouter(prefix="/api/admin/performance/notifications", tags=["admin-performance-notifications"])
 test_limit = Depends(rate_limited("notify-test", limit=5, window_seconds=3600))
@@ -71,6 +72,6 @@ def send_test(admin: AdminUser = Depends(get_current_admin), db: Session = Depen
     return {"results": result}
 
 
-@router.get("/status", dependencies=[admin_or_hr])
+@router.get("/status", dependencies=[needs("notifications.status")])
 def status(db: Session = Depends(get_db)) -> dict[str, Any]:
     return ch.delivery_report(db, today_nairobi() - timedelta(days=14))
