@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -73,3 +73,28 @@ class ProductRoutingAssignment(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+class ProductRoutingAgent(Base):
+    """
+    One row per agent a product is routed to - lets a product be shared between
+    several agents (see app/services/product_routing.py::get_routed_admin, which
+    rotates new applications between the active ones).
+
+    Additive to ProductRoutingAssignment, which stays exactly as it was:
+    - If a product has rows here, they ARE its agents.
+    - If it has none, the single legacy ProductRoutingAssignment.assigned_admin_id
+      (if set) is its only agent - so products configured before this table existed
+      keep working untouched.
+    - The Loan Routing page keeps assigned_admin_id pointing at the first agent, so
+      anything that still reads that column (or a rollback of this feature) behaves
+      as a single-agent routing to that first person.
+    """
+
+    __tablename__ = "product_routing_agents"
+    __table_args__ = (UniqueConstraint("product_slug", "admin_id", name="uq_product_routing_agent"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    product_slug: Mapped[str] = mapped_column(String(60), index=True)
+    admin_id: Mapped[str] = mapped_column(ForeignKey("admin_users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

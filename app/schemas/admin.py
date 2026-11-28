@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 from app.schemas.career_application import CareerApplicationRead
 from app.schemas.contact import ContactRead
-from app.schemas.loan_application import LoanApplicationRead
+from app.schemas.loan_application import LoanApplicationListItem
 
 
 class PageMeta(BaseModel):
@@ -19,7 +19,7 @@ class PaginatedContacts(BaseModel):
 
 class PaginatedLoanApplications(BaseModel):
     meta: PageMeta
-    items: list[LoanApplicationRead]
+    items: list[LoanApplicationListItem]
 
 
 class PaginatedCareerApplications(BaseModel):

@@ -67,6 +67,34 @@ class LoanApplicationRead(BaseModel):
     created_at: datetime
 
 
+class LoanApplicationListItem(BaseModel):
+    """
+    Slim row for the admin Loan Applications table (GET /api/admin/loan-applications).
+    Only what the table shows - no id_number, email, monthly_income, etc. - and plain
+    str types instead of EmailStr/validators, so a big list is cheap to build and send.
+    Full details still come from LoanApplicationRead (status/assign responses, exports).
+    """
+
+    id: str
+    product_slug: str
+    product_name: str
+    tier_label: str
+    amount: float
+    term_value: int
+    term_unit: str
+    full_name: str
+    phone: str
+    location: str | None = None
+    county: str | None = None
+    assigned_branch_id: str | None = None
+    assigned_branch_name: str | None = None
+    branch_assignment_method: str | None = None
+    assigned_loan_officer_id: str | None = None
+    assigned_loan_officer_name: str | None = None
+    status: LoanApplicationStatus
+    created_at: datetime
+
+
 class LoanApplicationCreateResponse(BaseModel):
     success: bool = True
     message: str = "Application received. A loan officer will contact you within 24 hours to verify your details."

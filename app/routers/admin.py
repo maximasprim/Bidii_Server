@@ -18,7 +18,7 @@ from app.models.loan_application import LoanApplication, LoanApplicationStatus
 from app.models.ats import ATSAuditLog, ATSBatchJob, ATSRecruiterNote, ATSScreeningResult
 from app.models.internal_notification import InternalNotification
 from app.models.notification import NotificationLog
-from app.models.product_routing import SUGGESTED_ROLE_FOR_PRODUCT, ProductRoutingAssignment
+from app.models.product_routing import SUGGESTED_ROLE_FOR_PRODUCT, ProductRoutingAgent, ProductRoutingAssignment
 from app.schemas.admin import (
     DashboardStats,
     LoanApplicationAssignRequest,
@@ -43,7 +43,7 @@ from app.schemas.contact import ContactRead
 from app.schemas.loan_application import LoanApplicationRead
 from app.services.auth import get_current_admin, hash_password, require_roles
 from app.services.internal_notifications import notify_officer_of_manual_assignment
-from app.services.loan_application_presenter import to_loan_application_read, to_loan_application_read_list
+from app.services.loan_application_presenter import to_loan_application_list_items, to_loan_application_read
 from app.services.notifications import maybe_auto_notify
 from app.services.role_permissions import require_menu_access
 from app.services.storage import supabase, BUCKET
@@ -213,6 +213,7 @@ def list_contacts(
 def list_loan_applications(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    all_rows: bool = Query(False, alias="all"),
     status_filter: str | None = Query(None, alias="status"),
     product_slug: str | None = None,
     db: Session = Depends(get_db),
@@ -249,15 +250,18 @@ def list_loan_applications(
     if product_slug:
         query = query.filter(LoanApplication.product_slug == product_slug)
     total = query.count()
-    items = (
-        query.order_by(LoanApplication.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+    ordered = query.order_by(LoanApplication.created_at.desc())
+    if all_rows:
+        # ?all=true returns every matching application in one response (the
+        # admin Loan Applications page uses this). Same role scoping and
+        # filters as above; only the paging is skipped.
+        items = ordered.all()
+        page, page_size = 1, max(total, 1)
+    else:
+        items = ordered.offset((page - 1) * page_size).limit(page_size).all()
     return PaginatedLoanApplications(
         meta=_page_meta(page, page_size, total),
-        items=to_loan_application_read_list(db, items),
+        items=to_loan_application_list_items(db, items),
     )
 
 
@@ -397,7 +401,7 @@ def assign_loan_application(
     dependencies=[Depends(require_menu_access("/admin/loan-applications"))],
 )
 def list_branch_loan_officers(
-    branch_id: str,
+    branch_id: str | None = None,
     db: Session = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin),
 ) -> list[AdminUserRead]:
@@ -427,14 +431,18 @@ def list_branch_loan_officers(
        branch_office_admin keeps the narrower, branch-scoped view: their
        role is inherently about one branch's inbox, not the whole roster.
     """
-    if current_admin.role == "branch_office_admin" and branch_id not in (current_admin.managed_branch_ids or []):
+    managed = current_admin.managed_branch_ids or []
+    if current_admin.role == "branch_office_admin" and branch_id and branch_id not in managed:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You don't manage that branch.")
     if current_admin.role not in ("admin", "branch_office_admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not permitted.")
 
     query = db.query(AdminUser).filter(AdminUser.role.in_(AGENT_ROLES), AdminUser.is_active.is_(True))
     if current_admin.role == "branch_office_admin":
-        query = query.filter(AdminUser.branch_id == branch_id)
+        # branch_id omitted -> every officer across all the branches this admin manages
+        # (the Loan Applications page loads this once, alongside the applications, and
+        # filters per row by officer.branch_id).
+        query = query.filter(AdminUser.branch_id == branch_id) if branch_id else query.filter(AdminUser.branch_id.in_(managed))
     officers = query.order_by(AdminUser.role.asc(), AdminUser.username.asc()).all()
     return [AdminUserRead.model_validate(o) for o in officers]
 
@@ -760,6 +768,7 @@ def delete_admin_user_permanently(
         .filter(LoanApplication.assigned_loan_officer_id == user_id)
         .update({LoanApplication.assigned_loan_officer_id: None}, synchronize_session=False)
     )
+    db.query(ProductRoutingAgent).filter(ProductRoutingAgent.admin_id == user_id).delete(synchronize_session=False)
     anonymized = 0
     anonymized += (
         db.query(ProductRoutingAssignment)

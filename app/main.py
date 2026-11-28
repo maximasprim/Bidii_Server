@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -421,6 +422,10 @@ app = FastAPI(
     description="Backend API for the Bidii Credit website (contact, loan applications, careers).",
     version="0.1.0",
 )
+
+# Compress responses over 1 KB (big JSON lists shrink to a fraction of their size).
+# Added before CORS so CORS stays the outermost layer and still decorates every response.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,

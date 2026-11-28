@@ -15,7 +15,12 @@ from app.services.branch_assignment import COVERED_COUNTIES, assign_branch
 from app.services.internal_notifications import notify_branch_of_new_application
 from app.services.loan_application_duplicate_check import find_pending_duplicate
 from app.services.loan_application_presenter import to_loan_application_read
-from app.services.product_routing import get_routed_admin, notify_routed_admin_of_new_application
+from app.services.product_routing import (
+    get_active_routing_agents,
+    get_routed_admin,
+    notify_routed_admin_of_new_application,
+    notify_routed_team_of_new_application,
+)
 
 logger = logging.getLogger("bidii.loan_applications")
 
@@ -162,6 +167,14 @@ def submit_loan_application(
                 db.refresh(record)
                 # Never raises - see the function's own docstring.
                 notify_routed_admin_of_new_application(db, admin=routed_admin, application=record)
+                # Product routed to several people: everyone ticked is told too (the application
+                # itself is assigned to the one whose turn it is - see get_routed_admin).
+                try:
+                    others = [a for a in get_active_routing_agents(db, record.product_slug) if a.id != routed_admin.id]
+                    if others:
+                        notify_routed_team_of_new_application(db, others=others, owner=routed_admin, application=record)
+                except Exception:  # noqa: BLE001 - must never break the applicant's submission
+                    logger.exception("Failed to notify the rest of the routing team for application %r", record.id)
             else:
                 # Never raises - see the function's own docstring.
                 notify_branch_of_new_application(db, branch_id=branch.id, branch_name=branch.name, application=record)
